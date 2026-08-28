@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Faktura PL Generator
 // @namespace    local
-// @version      1.0.1
+// @version      1.1.0
 // @description  Generuje fakturę PDF (PL) na podstawie zamówienia AliExpress — bez osobnego rozszerzenia
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -638,23 +638,23 @@
       <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:10px;">Dane sprzedawcy ze zrzutu ekranu</h3>
 
       <div class="ig-ai-step">
-        <h4>1. Otwórz sklep i zrób zrzut ekranu</h4>
-        <p>Kliknij poniżej, aby otworzyć profil sklepu. Zrób wycinek (Win+Shift+S) z danymi firmy (Business Information).</p>
+        <h4>1. Otwórz dane rejestrowe sprzedawcy i zrób zrzut ekranu</h4>
+        <p>Kliknij poniżej — otworzy się strona z licencją firmy sprzedawcy (obrazek, nie tekst, dlatego potrzebny zrzut). AliExpress może poprosić o przesunięcie suwaka (weryfikacja "slide to verify") — zrób to ręcznie, to zwykłe zabezpieczenie strony. Potem zrób wycinek (Win+Shift+S) z danymi firmy.</p>
         <a href="#" id="ig-sellerStoreLink" target="_blank" rel="noopener" class="ig-store-btn">
-          Otwórz profil sklepu
+          Otwórz licencję sprzedawcy
           <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M318 1024l-64-64 448-448-448-448 64-64 512 512z"/></svg>
         </a>
       </div>
 
       <div class="ig-ai-step">
-        <h4>2. Zapytaj Gemini</h4>
-        <p>Otwórz Gemini w nowej karcie, aby przygotować się do wklejenia danych.</p>
-        <a href="https://gemini.google.com/app" target="_blank" rel="noopener" class="ig-gemini-link">Otwórz Gemini (gemini.google.com) &rarr;</a>
+        <h4>2. Zapytaj Claude</h4>
+        <p>Otwórz Claude w nowej karcie, aby przygotować się do wklejenia danych.</p>
+        <a href="https://claude.ai/new" target="_blank" rel="noopener" class="ig-gemini-link">Otwórz Claude (claude.ai) &rarr;</a>
       </div>
 
       <div class="ig-ai-step">
         <h4>3. Skopiuj ten Prompt</h4>
-        <p>Wklej ten prompt do Gemini razem ze zrzutem ekranu.</p>
+        <p>Wklej ten prompt do Claude razem ze zrzutem ekranu.</p>
         <div class="ig-prompt-container">
           <span id="ig-aiPromptText" class="ig-prompt-text">Extract seller data from this image. Return ONLY raw JSON (no markdown) with these keys: "name" (string), "taxId" (string, e.g. VAT/NIP), "address" (string, full address). If value is missing, use empty string.</span>
           <button class="ig-copy-btn" id="ig-copyPromptBtn" type="button" title="Skopiuj do schowka">
@@ -677,7 +677,10 @@
 
     const storeBtn = qs("ig-sellerStoreLink");
     if (data.seller.storeUrl) {
-      storeBtn.href = data.seller.storeUrl;
+      const storeNumMatch = data.seller.storeUrl.match(/\/store\/(\d+)/);
+      storeBtn.href = storeNumMatch
+        ? `https://shoprenderview.aliexpress.com/credential/showcredential.htm?storeNum=${storeNumMatch[1]}`
+        : data.seller.storeUrl;
     } else {
       storeBtn.style.display = "none";
     }
@@ -716,7 +719,7 @@
         closeModal("ig-ai-backdrop");
       } catch (e) {
         console.error(e);
-        alert("Błąd parsowania JSON! Sprawdź czy skopiowałeś poprawny format z Gemini.");
+        alert("Błąd parsowania JSON! Sprawdź czy skopiowałeś poprawny format z czatu AI.");
       }
     });
   }
