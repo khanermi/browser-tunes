@@ -554,10 +554,10 @@
       <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:10px;">Dane sprzedawcy ze zrzutu ekranu (Gemini)</h3>
 
       <div class="zg-ai-step">
-        <h4>1. Otwórz sklep i zrób zrzut ekranu</h4>
-        <p>Kliknij poniżej, aby otworzyć profil sklepu. Zrób wycinek (Win+Shift+S) z danymi firmy (Business Information).</p>
+        <h4>1. Otwórz licencję sprzedawcy i zrób zrzut ekranu</h4>
+        <p>Kliknij poniżej — otworzy się strona z licencją firmy (dane są renderowane jako obrazek, dlatego potrzebny zrzut). AliExpress może poprosić o przesunięcie suwaka ("slide to verify") — zrób to ręcznie, to zwykłe zabezpieczenie strony. Potem zrób wycinek (Win+Shift+S) z danymi firmy.</p>
         <a href="#" id="zg-sellerStoreLink" target="_blank" rel="noopener" class="zg-store-btn">
-          Otwórz profil sklepu
+          Otwórz licencję sprzedawcy
           <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M318 1024l-64-64 448-448-448-448 64-64 512 512z"/></svg>
         </a>
       </div>
@@ -593,7 +593,13 @@
 
     const storeBtn = qs("zg-sellerStoreLink");
     if (data.seller.storeUrl) {
-      storeBtn.href = data.seller.storeUrl;
+      // storeNum for the credential page is the same numeric id AliExpress puts in the
+      // seller-store link href (/store/<id>?spm=...) on the order page itself — the spm=
+      // part is just tracking noise and can be dropped.
+      const storeNumMatch = data.seller.storeUrl.match(/\/store\/(\d+)/);
+      storeBtn.href = storeNumMatch
+        ? `https://shoprenderview.aliexpress.com/credential/showcredential.htm?storeNum=${storeNumMatch[1]}`
+        : data.seller.storeUrl;
     } else {
       storeBtn.style.display = "none";
     }

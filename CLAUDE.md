@@ -57,6 +57,42 @@ userscript, чтобы не поддерживать отдельное расш
   расширения — при изменении вёрстки AliExpress могут потребовать правки
   (это уязвимое место любого DOM-скрапинга, не специфика userscript'а).
 
+### `aliexpress-zestawienie-generator.user.js`
+Сайт: `aliexpress.com/p/order/detail*`. Форк `aliexpress-invoice-generator.user.js`
+для случая, когда покупатель — nievatowiec (JDG na zwolnieniu podmiotowym z VAT):
+AliExpress физически не выпускает fakturę с данными фирмы, а самостоятельно
+генерировать документ, выглядящий как faktura wystawiona przez sprzedawcę
+(с его брендингом/номером/структурой инвойса), — юридически некорректно,
+даже если товар настоящий и данные продавца верны (faktura может быть
+wystawiona только sprzedawcą, art. 106b ustawy o VAT).
+
+Отличия от `aliexpress-invoice-generator.user.js` (парсинг DOM и AI-флоу общие,
+портируются в обе стороны при апстрим-фиксах):
+- Документ называется "ZESTAWIENIE WŁASNE", не "FAKTURA"; в PDF есть явная
+  строка-дисклеймер, что это не faktura sprzedawcy.
+- Нет лого AliExpress в PDF.
+- Нет разбивки Netto/VAT/Brutto и нет отдельного номера документа (`FV-...`) —
+  только "RAZEM (zapłacono)", дата и номер zamówienia (сам заказ, не выдуманный
+  номер документа).
+- Блок Sprzedawca/Nabywca — один последовательный текстовый блок, а не два
+  зеркальных столбца (та вёрстка визуально имитирует шапку инвойса).
+- Раз в документе только "RAZEM", без разбивок, здесь нет ни парсинга
+  VAT (`parseVatFromDom`/`getVatAmountAsync`), ни expand+парсинга "Szacowane
+  opłaty importowe" (`expandPriceBreakdown`/`scrapeImportFees` из
+  `aliexpress-invoice-generator.user.js`) — импортные пошлины при наличии
+  молча попадают в общую "różnicę" (Koszt dostawy/Rabat), отдельной строкой
+  не выделяются. Кнопка поэтому синхронная, без "Pobieranie..." — сбор данных
+  не требует ожидания раскрытия блока цены.
+- AI-шаг в получении данных продавца сознательно остался на Gemini (бесплатно),
+  а не на Claude, на который в `aliexpress-invoice-generator.user.js` уже
+  переехали — при переносе апстрим-фиксов в эту сторону это единственная
+  точка, которую переносить не нужно. Прямая ссылка на credential/license-
+  страницу продавца (по `storeNum` из URL магазина) при этом перенесена.
+
+Назначение — вспомогательный документ к оригинальному paragon/potwierdzenie
+zamówienia + dowodowi zapłaty для KPiR/wFirma (там это заводится как "Inny
+dowód księgowy", а не "Faktura"), а не самостоятельная замена faktury.
+
 ## Общие детали по будущим задачам
 
 - Новый скрипт — новый файл в корне, с обязательными
