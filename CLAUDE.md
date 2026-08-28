@@ -107,6 +107,12 @@ wystawiona только sprzedawcą, art. 106b ustawy o VAT).
   `iframe.invoice-iframe-container`, `#download-receipt`) изменятся —
   `capturePLReceiptPng` просто вернёт `null` и zestawienie всё равно
   скачается (деградация не блокирует основной сценарий).
+- Два программных скачивания за один клик — это то, на чём Chrome по
+  умолчанию блокирует второе ("automatic downloads" permission per-site,
+  видно как маленькая иконка в адресной строке). Поэтому `generatePdf(data)`
+  вызывается **первым**, сразу, до всех await'ов из `capturePLReceiptPng` —
+  если Chrome что-то заблокирует, это будет paragon (второй, менее
+  критичный), а не сам zestawienie.
 
 Назначение — вспомогательный документ к оригинальному paragon/potwierdzenie
 zamówienia + dowodowi zapłaty для KPiR/wFirma (там это заводится как "Inny

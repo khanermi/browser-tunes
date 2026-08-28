@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Zestawienie PL Generator
 // @namespace    local
-// @version      1.1.0
+// @version      1.1.1
 // @description  Generuje zestawienie własne (PDF, PL) na podstawie zamówienia AliExpress — dokument pomocniczy do paragonu/dowodu zapłaty, NIE faktura wystawiona przez sprzedawcę
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -551,6 +551,13 @@
       generateBtn.disabled = true;
       generateBtn.textContent = "Pobieranie...";
 
+      // Zestawienie idzie pierwsze i zaraz po kliknięciu — Chrome blokuje drugie
+      // (i kolejne) automatyczne pobieranie z tej samej strony bez zgody użytkownika
+      // ("Allow multiple downloads"), więc ważniejszy plik ma iść, zanim to ryzyko
+      // w ogóle się pojawi; paragon jako drugi jest tym, który może ewentualnie
+      // utknąć za tym promptem.
+      generatePdf(data);
+
       try {
         const receiptDataUri = await capturePLReceiptPng();
         if (receiptDataUri) {
@@ -559,8 +566,6 @@
       } catch (e) {
         console.error("[ZG] Błąd pobierania oryginalnego paragonu:", e);
       }
-
-      generatePdf(data);
 
       generateBtn.textContent = originalLabel;
       generateBtn.disabled = false;
