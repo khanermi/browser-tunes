@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Faktura PL Generator
 // @namespace    local
-// @version      1.0.0
+// @version      1.0.1
 // @description  Generuje fakturę PDF (PL) na podstawie zamówienia AliExpress — bez osobnego rozszerzenia
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -229,8 +229,8 @@
       if (!icon) icon = vatLabel.nextElementSibling?.querySelector(".comet-icon-help") || vatLabel.nextElementSibling;
 
       if (icon) {
-        icon.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));
-        icon.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, cancelable: true, view: window }));
+        icon.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true }));
+        icon.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, cancelable: true }));
 
         await new Promise((resolve) => setTimeout(resolve, 500));
 
