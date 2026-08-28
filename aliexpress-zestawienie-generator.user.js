@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Zestawienie PL Generator
 // @namespace    local
-// @version      1.0.0
+// @version      1.1.0
 // @description  Generuje zestawienie własne (PDF, PL) na podstawie zamówienia AliExpress — dokument pomocniczy do paragonu/dowodu zapłaty, NIE faktura wystawiona przez sprzedawcę
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -395,7 +395,7 @@
       </div>
 
       <div class="zg-actions">
-        <button id="zg-generatePdfBtn" class="zg-btn-primary" type="button">Pobierz PDF</button>
+        <button id="zg-generatePdfBtn" class="zg-btn-primary" type="button">Pobierz PDF + Paragon</button>
       </div>
 
       <input type="hidden" id="zg-sourceUrl">
@@ -544,8 +544,126 @@
     // --- AI-модалка для данных продавца (явно Gemini) ---
     qs("zg-openAiModalBtn").addEventListener("click", () => openAiModal(data, updateSellerRawText, root));
 
-    // --- Генерация PDF ---
-    qs("zg-generatePdfBtn").addEventListener("click", () => generatePdf(data));
+    // --- Генерация PDF + oryginalny paragon (dwa pliki, jeden klik) ---
+    const generateBtn = qs("zg-generatePdfBtn");
+    generateBtn.addEventListener("click", async () => {
+      const originalLabel = generateBtn.textContent;
+      generateBtn.disabled = true;
+      generateBtn.textContent = "Pobieranie...";
+
+      try {
+        const receiptDataUri = await capturePLReceiptPng();
+        if (receiptDataUri) {
+          downloadDataUri(receiptDataUri, `Paragon_${data.header.orderId}.png`);
+        }
+      } catch (e) {
+        console.error("[ZG] Błąd pobierania oryginalnego paragonu:", e);
+      }
+
+      generatePdf(data);
+
+      generateBtn.textContent = originalLabel;
+      generateBtn.disabled = false;
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // 5b. ZAŁĄCZENIE ORYGINALNEGO PARAGONU (PNG generowany przez sam AliExpress)
+  // ---------------------------------------------------------------------
+  // "Paragon" renderuje się w osobnym iframe tego samego originu. Kliknięcie jego
+  // własnego przycisku "Pobierz" tworzy <a download> z href="data:image/png;...” —
+  // czysto po stronie klienta (canvas), bez żadnego zapytania sieciowego. Łapiemy
+  // tę samą data-URI, żeby pobrać kopię oryginału obok zestawienia — nic w niej nie
+  // zmieniamy, to plik wygenerowany przez samego sprzedawcę/AliExpress.
+  function waitFor(conditionFn, timeoutMs) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const interval = setInterval(() => {
+        let result;
+        try {
+          result = conditionFn();
+        } catch (e) {
+          result = null;
+        }
+        if (result) {
+          clearInterval(interval);
+          resolve(result);
+        } else if (Date.now() - start > timeoutMs) {
+          clearInterval(interval);
+          resolve(null);
+        }
+      }, 150);
+    });
+  }
+
+  function findNativeButtonByText(text) {
+    const container = document.querySelector(".order-status.order-block");
+    if (!container) return null;
+    const spans = Array.from(container.querySelectorAll("span"));
+    const span = spans.find((s) => s.children.length === 0 && s.textContent.trim() === text);
+    if (!span) return null;
+    return span.closest(".comet-btn") || span;
+  }
+
+  function closeParagonModal(iframe) {
+    try {
+      // Krzyżyk zamykający jest częścią treści samego iframe'u (ten sam origin), nie
+      // opakowania modala na stronie głównej.
+      const closeEl = iframe.contentDocument?.querySelector('[class*="close" i]');
+      if (closeEl) closeEl.click();
+    } catch (e) {
+      console.error("[ZG] Nie udało się zamknąć modalu Paragon:", e);
+    }
+  }
+
+  function downloadDataUri(dataUri, filename) {
+    const a = document.createElement("a");
+    a.href = dataUri;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function capturePLReceiptPng() {
+    const paragonBtn = findNativeButtonByText("Paragon");
+    if (!paragonBtn) {
+      console.error("[ZG] Nie znaleziono przycisku 'Paragon' — pomijam załączanie oryginału.");
+      return null;
+    }
+    paragonBtn.click();
+
+    const iframe = await waitFor(() => document.querySelector("iframe.invoice-iframe-container"), 4000);
+    if (!iframe) {
+      console.error("[ZG] Iframe paragonu się nie pojawił.");
+      return null;
+    }
+
+    const downloadBtn = await waitFor(
+      () => iframe.contentDocument && iframe.contentDocument.querySelector("#download-receipt"),
+      4000
+    );
+    if (!downloadBtn) {
+      console.error("[ZG] Przycisk pobierania wewnątrz paragonu się nie pojawił.");
+      return null;
+    }
+
+    const win = iframe.contentWindow;
+    const originalClick = win.HTMLAnchorElement.prototype.click;
+    let capturedHref = null;
+    win.HTMLAnchorElement.prototype.click = function () {
+      if (this.href && this.href.startsWith("data:")) capturedHref = this.href;
+      return originalClick.call(this);
+    };
+
+    downloadBtn.click();
+
+    await waitFor(() => capturedHref !== null, 4000);
+    win.HTMLAnchorElement.prototype.click = originalClick;
+
+    closeParagonModal(iframe);
+
+    return capturedHref;
   }
 
   function openAiModal(data, updateSellerRawText, generatorRoot) {

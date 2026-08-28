@@ -81,13 +81,32 @@ wystawiona только sprzedawcą, art. 106b ustawy o VAT).
   opłaty importowe" (`expandPriceBreakdown`/`scrapeImportFees` из
   `aliexpress-invoice-generator.user.js`) — импортные пошлины при наличии
   молча попадают в общую "różnicę" (Koszt dostawy/Rabat), отдельной строкой
-  не выделяются. Кнопка поэтому синхронная, без "Pobieranie..." — сбор данных
-  не требует ожидания раскрытия блока цены.
+  не выделяются. Кнопка открытия редактора (`injectButton`) поэтому
+  синхронная — сбор данных не требует ожидания раскрытия блока цены.
 - AI-шаг в получении данных продавца сознательно остался на Gemini (бесплатно),
   а не на Claude, на который в `aliexpress-invoice-generator.user.js` уже
   переехали — при переносе апстрим-фиксов в эту сторону это единственная
   точка, которую переносить не нужно. Прямая ссылка на credential/license-
   страницу продавца (по `storeNum` из URL магазина) при этом перенесена.
+- Кнопка "Pobierz PDF + Paragon" в редакторе скачивает **два файла одним
+  кликом**: сам zestawienie и оригинальный paragon, который рендерит сам
+  AliExpress в своей модалке "Paragon" (`capturePLReceiptPng`). Эта модалка —
+  отдельный iframe того же originu (`iframe.invoice-iframe-container`);
+  скачивание внутри неё — чистый client-side canvas, `<a download>` с
+  `href="data:image/png;...”`, без единого сетевого запроса. Скрипт сам жмёт
+  их кнопку "Paragon" → дожидается iframe → подменяет
+  `contentWindow.HTMLAnchorElement.prototype.click`, чтобы поймать эту же
+  data-URI в момент их собственного клика по `#download-receipt` внутри
+  iframe → скачивает копию как `Paragon_{orderId}.png`, ничего в ней не
+  меняя (это файл, сгенерированный самим AliExpress, не наша реконструкция).
+  Пара с zestawieniem сознательно остаётся **двумя файлами**, не мержится в
+  один PDF — так происхождение каждого однозначно по самому факту раздельных
+  файлов, а не по тексту дисклеймера внутри одного документа; wFirma и так
+  штатно допускает несколько вложений на один wydatek. Если селекторы
+  AliExpress (`.order-status.order-block`, текст "Paragon",
+  `iframe.invoice-iframe-container`, `#download-receipt`) изменятся —
+  `capturePLReceiptPng` просто вернёт `null` и zestawienie всё равно
+  скачается (деградация не блокирует основной сценарий).
 
 Назначение — вспомогательный документ к оригинальному paragon/potwierdzenie
 zamówienia + dowodowi zapłaty для KPiR/wFirma (там это заводится как "Inny
