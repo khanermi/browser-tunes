@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Zestawienie PL Generator
 // @namespace    local
-// @version      1.1.1
+// @version      1.1.2
 // @description  Generuje zestawienie własne (PDF, PL) na podstawie zamówienia AliExpress — dokument pomocniczy do paragonu/dowodu zapłaty, NIE faktura wystawiona przez sprzedawcę
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -657,8 +657,11 @@
     const originalClick = win.HTMLAnchorElement.prototype.click;
     let capturedHref = null;
     win.HTMLAnchorElement.prototype.click = function () {
+      // Świadomie NIE wywołujemy originalClick — bez tego AliExpress zapisze swój
+      // własny plik ("OrderSummary...") obok naszego Paragon_{orderId}.png, czyli
+      // dokładnie ten sam obrazek pod dwiema nazwami. Skoro i tak pobieramy tę samą
+      // data-URI pod własną, przewidywalną nazwą, ich pobranie jest zbędne.
       if (this.href && this.href.startsWith("data:")) capturedHref = this.href;
-      return originalClick.call(this);
     };
 
     downloadBtn.click();
