@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Faktura PL Generator
 // @namespace    local
-// @version      1.2.0
+// @version      1.2.1
 // @description  Generuje fakturę PDF (PL) na podstawie zamówienia AliExpress — bez osobnego rozszerzenia
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -217,6 +217,21 @@
     return 0;
   }
 
+  // Rozbicie ceny (Podsuma/W dostawie/Kupon/Szacowane opłaty importowe) jest domyślnie
+  // zwinięte — pozycje poza Podsuma/Suma nie renderują się w DOM, dopóki nie kliknie się
+  // strzałki ".switch-icon". Strona ładuje się zawsze zwinięta, więc jedno kliknięcie
+  // na starcie wystarczy (nie trzeba sprawdzać stanu ikony).
+  async function expandPriceBreakdown() {
+    try {
+      const icon = document.querySelector(".switch-icon");
+      if (!icon) return;
+      icon.click();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } catch (e) {
+      console.error("[IG] Błąd rozwijania podsumowania cen:", e);
+    }
+  }
+
   // Niektóre zamówienia (nowe przepisy o cłach/imporcie) pokazują dodatkową pozycję
   // w rozbiciu ceny, np. "Szacowane opłaty importowe: 16,01zł" — kwota ta jest już
   // wliczona w Suma, więc trzeba ją wyodrębnić osobno zamiast zostawiać w
@@ -268,6 +283,8 @@
   }
 
   async function scrapeData() {
+    await expandPriceBreakdown();
+
     const urlParams = new URLSearchParams(window.location.search);
     const orderId = urlParams.get("orderId") || "---";
 
