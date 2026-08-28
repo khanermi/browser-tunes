@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Faktura PL Generator
 // @namespace    local
-// @version      1.1.1
+// @version      1.2.0
 // @description  Generuje fakturę PDF (PL) na podstawie zamówienia AliExpress — bez osobnego rozszerzenia
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -217,6 +217,31 @@
     return 0;
   }
 
+  // Niektóre zamówienia (nowe przepisy o cłach/imporcie) pokazują dodatkową pozycję
+  // w rozbiciu ceny, np. "Szacowane opłaty importowe: 16,01zł" — kwota ta jest już
+  // wliczona w Suma, więc trzeba ją wyodrębnić osobno zamiast zostawiać w
+  // domyślnym wyliczeniu Koszt dostawy/Rabat (patrz openGenerator).
+  function scrapeImportFees() {
+    let total = 0;
+    try {
+      const rows = document.querySelectorAll(".order-price-item");
+      rows.forEach((row) => {
+        const titleEl = row.querySelector('[data-pl="order_price_item_title"]');
+        const valueEl = row.querySelector('[data-pl="order_price_item_value"]');
+        if (!titleEl || !valueEl) return;
+
+        const title = titleEl.textContent || "";
+        if (!/importow/i.test(title)) return;
+
+        const rawValue = valueEl.textContent.replace(/[^\d.,]/g, "").replace(",", ".");
+        total += parseFloat(rawValue) || 0;
+      });
+    } catch (e) {
+      console.error("[IG] Błąd parsowania opłat importowych:", e);
+    }
+    return total;
+  }
+
   async function getVatAmountAsync() {
     let vatVal = parseVatFromDom();
     if (vatVal > 0) return vatVal;
@@ -270,6 +295,7 @@
       lineItems: scrapeLineItems(),
       parsedTotalStr: totalOrderPrice,
       totalVat: parsedVat,
+      importFees: scrapeImportFees(),
       url: window.location.href,
     };
   }
@@ -359,7 +385,20 @@
     const totalOrderPrice =
       parseFloat((parsedData.parsedTotalStr || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
 
-    const difference = totalOrderPrice - itemsSum;
+    // "Szacowane opłaty importowe" jest już wliczone w totalOrderPrice — wydzielamy je
+    // jako osobną pozycję, żeby nie wpadło razem z dostawą/rabatem do jednej "różnicy".
+    const importFees = parsedData.importFees || 0;
+    if (importFees > 0.01) {
+      calculatedItems.push({
+        description: "Szacowane opłaty importowe (Import duties)",
+        productUrl: null,
+        quantity: 1,
+        grossUnitPrice: importFees,
+        totalGross: importFees,
+      });
+    }
+
+    const difference = totalOrderPrice - itemsSum - importFees;
     if (Math.abs(difference) > 0.01) {
       const desc = difference > 0 ? "Koszt dostawy (Shipping)" : "Rabat / Kupon (Discount)";
       calculatedItems.push({
