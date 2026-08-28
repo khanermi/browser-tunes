@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Faktura PL Generator
 // @namespace    local
-// @version      1.2.1
+// @version      1.3.0
 // @description  Generuje fakturę PDF (PL) na podstawie zamówienia AliExpress — bez osobnego rozszerzenia
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -694,10 +694,10 @@
       <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:10px;">Dane sprzedawcy ze zrzutu ekranu</h3>
 
       <div class="ig-ai-step">
-        <h4>1. Otwórz sklep i zrób zrzut ekranu</h4>
-        <p>Kliknij poniżej, aby otworzyć profil sklepu. Najedź na nazwę sklepu u góry, w wyskakującym okienku "Informacje o sklepie (przedsiębiorcy)" kliknij link "Informacje prawne o przedsiębiorcy i zasady sprzedaży" (otworzy się w nowej karcie, może poprosić o przesunięcie suwaka — zrób to ręcznie, to zwykłe zabezpieczenie strony). Zrób wycinek (Win+Shift+S) z danymi firmy — są renderowane jako obrazek.</p>
+        <h4>1. Otwórz licencję sprzedawcy i zrób zrzut ekranu</h4>
+        <p>Kliknij poniżej — otworzy się strona z licencją firmy (dane są renderowane jako obrazek, dlatego potrzebny zrzut). AliExpress może poprosić o przesunięcie suwaka (weryfikacja "slide to verify") — zrób to ręcznie, to zwykłe zabezpieczenie strony. Potem zrób wycinek (Win+Shift+S) z danymi firmy.</p>
         <a href="#" id="ig-sellerStoreLink" target="_blank" rel="noopener" class="ig-store-btn">
-          Otwórz profil sklepu
+          Otwórz licencję sprzedawcy
           <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M318 1024l-64-64 448-448-448-448 64-64 512 512z"/></svg>
         </a>
       </div>
@@ -733,11 +733,13 @@
 
     const storeBtn = qs("ig-sellerStoreLink");
     if (data.seller.storeUrl) {
-      // storeNum in the credential/showcredential.htm URL does NOT always match the
-      // numeric id in the store front-page URL (confirmed by testing several sellers) —
-      // only the store page itself resolves the correct id, so link there and let the
-      // user click through "Informacje prawne o przedsiębiorcy..." themselves.
-      storeBtn.href = data.seller.storeUrl;
+      // storeNum for the credential page is the same numeric id AliExpress puts in the
+      // seller-store link href (/store/<id>?spm=...) on the order page itself — the spm=
+      // part is just tracking noise and can be dropped.
+      const storeNumMatch = data.seller.storeUrl.match(/\/store\/(\d+)/);
+      storeBtn.href = storeNumMatch
+        ? `https://shoprenderview.aliexpress.com/credential/showcredential.htm?storeNum=${storeNumMatch[1]}`
+        : data.seller.storeUrl;
     } else {
       storeBtn.style.display = "none";
     }
