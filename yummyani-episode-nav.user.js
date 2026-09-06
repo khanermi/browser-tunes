@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.1
+// @version      1.2
 // @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
 // @match        *://kodikplayer.com/*
+// @match        *://*.kodikres.com/*
 // @match        *://video.sibnet.ru/*
 // @match        *://alloha.yani.tv/*
 // @run-at       document-start
@@ -69,6 +70,34 @@
     let tries = 0;
     let timer = null;
 
+    // Отвечаем наверх всегда, а не только при удаче: иначе «плеер меня не
+    // слышит» и «плеер слышит, но <video> у него не на этом уровне»
+    // неотличимы снаружи — из топа в чужой origin не заглянуть, и отладка
+    // упирается в стену. В ответе — что именно видит эта ветка.
+    function report(focused) {
+      const nested = [...document.querySelectorAll('iframe')].map((f) => {
+        try {
+          return new URL(f.src, location.href).hostname;
+        } catch (e) {
+          return '(no src)';
+        }
+      });
+      try {
+        window.top.postMessage(
+          {
+            type: FOCUS_ACK,
+            focused,
+            host: location.hostname,
+            hasVideo: !!document.querySelector('video'),
+            nested
+          },
+          '*'
+        );
+      } catch (e) {
+        /* топ недоступен — ничего не поделать */
+      }
+    }
+
     function focusVideo() {
       timer = null;
       if (isRealTextInput(document.activeElement)) return;
@@ -84,7 +113,7 @@
           /* не критично: фокус останется на самом <iframe>, как было до 1.1 */
         }
         if (document.activeElement === video) {
-          window.top.postMessage({ type: FOCUS_ACK }, '*');
+          report(true);
           return;
         }
       }
@@ -95,10 +124,16 @@
     window.addEventListener('message', (e) => {
       if (!e.data || e.data.type !== FOCUS_MESSAGE) return;
 
+      // Просьба пришла сверху по нашей же цепочке — значит этот фрейм
+      // действительно внутри страницы yummyani, даже если его referrer уже
+      // домен плеера, а не сайта. Для вложенных уровней это единственный
+      // способ включить и хоткей тоже (referrer-гейт там не проходит).
+      installKeyBridge();
+
       // Если плеер вложил ещё один iframe, <video> лежит там — просто
-      // пробрасываем просьбу на уровень глубже; ответит (FOCUS_ACK) тот
-      // уровень, где видео действительно есть. Сообщение идёт только вниз,
-      // так что зациклиться не может.
+      // пробрасываем просьбу на уровень глубже; ответит тот уровень, где
+      // видео действительно есть. Сообщение идёт только вниз, так что
+      // зациклиться не может.
       for (let i = 0; i < window.frames.length; i++) {
         try {
           window.frames[i].postMessage({ type: FOCUS_MESSAGE }, '*');
@@ -107,33 +142,21 @@
         }
       }
 
+      report(false); // снимок состояния: жив, вот что вижу прямо сейчас
       tries = 0;
       clearTimeout(timer);
       focusVideo();
     });
   }
 
-  // ==================== Ветка внутри iframe плеера ====================
-  //
-  // Плеер — cross-origin iframe (kodikplayer.com, video.sibnet.ru, alloha.yani.tv,
-  // CVH отдаётся с ru.yummyani.me), поэтому из него не достать DOM списка серий.
-  // Единственная задача этой ветки — пробросить хоткей наверх через postMessage;
-  // window.top долетает напрямую с любой глубины вложенности.
-  //
-  // Домены плееров стоят в @match ради этой ветки, но они используются и другими
-  // сайтами, поэтому гейтим по referrer: вне страниц yummyani скрипт ничего не
-  // перехватывает и чужие Ctrl+Left/Right не трогает (мост фокуса выше гейта не
-  // требует — он молча ждёт сообщения, которое там некому послать).
-  if (window.top !== window.self) {
-    installVideoFocusBridge();
+  // Хоткей внутри плеера: сам список серий отсюда недостижим (cross-origin),
+  // поэтому просто пробрасываем нажатие наверх — window.top долетает напрямую
+  // с любой глубины вложенности.
+  let keyBridgeInstalled = false;
 
-    let embedder = '';
-    try {
-      embedder = new URL(document.referrer).hostname;
-    } catch (e) {
-      /* referrer пустой/битый — считаем, что встроены не нами */
-    }
-    if (!SITE_HOST.test(embedder)) return;
+  function installKeyBridge() {
+    if (keyBridgeInstalled) return;
+    keyBridgeInstalled = true;
 
     document.addEventListener(
       'keydown',
@@ -149,6 +172,31 @@
       },
       true
     );
+  }
+
+  // ==================== Ветка внутри iframe плеера ====================
+  //
+  // Плеер — cross-origin iframe (kodikplayer.com + его вложенный kodikres.com,
+  // video.sibnet.ru, alloha.yani.tv, CVH отдаётся с ru.yummyani.me), поэтому из
+  // него не достать DOM списка серий. Задача этой ветки — пробросить хоткей
+  // наверх и по просьбе сверху забрать фокус на <video>.
+  //
+  // Домены плееров стоят в @match ради этой ветки, но они используются и другими
+  // сайтами, поэтому гейтим по referrer: вне страниц yummyani скрипт хоткеи не
+  // перехватывает. Мост фокуса гейта не требует (он молча ждёт сообщения,
+  // которое на чужом сайте некому послать), и хоткей на вложенном уровне
+  // включается как раз по факту такого сообщения — у вложенного фрейма referrer
+  // уже домен плеера, гейт бы его не пропустил.
+  if (window.top !== window.self) {
+    installVideoFocusBridge();
+
+    let embedder = '';
+    try {
+      embedder = new URL(document.referrer).hostname;
+    } catch (e) {
+      /* referrer пустой/битый — считаем, что встроены не нами */
+    }
+    if (SITE_HOST.test(embedder)) installKeyBridge();
     return;
   }
 
@@ -311,10 +359,16 @@
     const data = e.data;
     if (!data) return;
 
+    // Плеер отвечает на каждую просьбу, но замолкать можно только когда фокус
+    // реально встал: снимок с focused:false шлёт в том числе старый кадр,
+    // который сайт прямо сейчас сносит, — оборвав пинги по нему, мы бы не
+    // достучались до нового.
     if (data.type === FOCUS_ACK) {
-      focusDeadline = 0;
-      clearTimeout(focusTimer);
-      focusTimer = null;
+      if (data.focused === true) {
+        focusDeadline = 0;
+        clearTimeout(focusTimer);
+        focusTimer = null;
+      }
       return;
     }
 
