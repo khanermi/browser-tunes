@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         KinoGo AllPlay Episode Nav
 // @namespace    local
-// @version      1.0
-// @description  Ctrl+Left/Right — next/previous episode в Плеере 3 (AllPlay) на kinogo.ec. Работает и когда фокус внутри iframe плеера (postMessage-мост).
+// @version      1.1
+// @description  Ctrl+Left/Right — next/previous episode в Плеере 3 (AllPlay) на kinogo.ec. Работает и когда фокус внутри iframe плеера (postMessage-мост). Автоклик «Продолжить просмотр», чтобы сессия подхватывалась без пробела (пробел сбрасывает её).
 // @match        *://kinogo.ec/*
 // @match        *://*.stravers.live/*
 // @run-at       document-start
@@ -68,6 +68,21 @@
         },
         true
       );
+
+      // После релоада плеера (в т.ч. после переключения серии нашим же
+      // Ctrl+←/→) всплывает диалог «Продолжить просмотр» с сохранённой
+      // позиции. Жать тут пробел нельзя: это долетает до самого плеера как
+      // play/pause и сбрасывает сохранённую сессию/озвучку, а не жмёт кнопку
+      // диалога. Поэтому просто кликаем её сами, как только она появится.
+      const clickResumeIfPresent = () => {
+        const btn = document.querySelector('button.time_save__btn');
+        if (btn) btn.click();
+      };
+      new MutationObserver(clickResumeIfPresent).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+      clickResumeIfPresent(); // вдруг кнопка уже в DOM к моменту запуска скрипта
     }
     return;
   }
