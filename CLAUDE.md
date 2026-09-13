@@ -112,6 +112,25 @@
   стилям пункты там неотличимы друг от друга. Для него нужен отдельный
   профиль; домен в `@match` стоит только ради iframe-ветки.
 
+### `kinogo-allplay-episode-nav.user.js`
+Сайт: `kinogo.ec`, "Плеер 3" (AllPlay, iframe с `*.stravers.live`).
+- `Ctrl+←/→` — жмёт кнопки плеера `button[data-allplay="next"|"prev"]`.
+  Из топ-документа они недостижимы (cross-origin), поэтому топ шлёт
+  `postMessage` в iframe, а жмёт ветка скрипта внутри плеера. Собственный
+  хоткей внутри плеера включается только при `document.referrer` = kinogo
+  (stravers.live встраивают и другие сайты).
+- `F9` — псевдо-fullscreen, `Esc` — выход (как на rezka.ag, но без перехвата
+  PiP). Растягивается `position: fixed` не `<video>` (он в чужом origin), а
+  контейнер iframe `.kg-video-container`: iframe в нём `absolute` с inset 0 и
+  тянется сам. Нажатия внутри плеера пробрасываются наверх `postMessage`-ом,
+  топ принимает их только с `e.source === iframe.contentWindow`.
+- Все вкладки ("Смотреть онлайн" / "Плеер 1" / "Плеер 3") — **один и тот же**
+  `iframe.lazy`, сайт меняет ему только `src`. Поэтому `iframe.lazy` верен для
+  любой вкладки, а псевдо-fullscreen переживает смену плеера и серии.
+- Версия `1.1` занята откаченным коммитом (автоклик "Продолжить просмотр"),
+  следующая после `1.0` — сразу `1.2`: Tampermonkey мог успеть подтянуть
+  `1.1` и не увидел бы апдейт с тем же номером.
+
 ### `aliexpress-invoice-generator.user.js`
 Сайт: `aliexpress.com/p/order/detail*`. Портированная логика Chrome-расширения
 [`InvoiceExtension`](https://github.com/khanermi/InvoiceExtension) (парсинг
