@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Zestawienie PL Generator
 // @namespace    local
-// @version      1.1.2
+// @version      1.2.0
 // @description  Generuje zestawienie własne (PDF, PL) na podstawie zamówienia AliExpress — dokument pomocniczy do paragonu/dowodu zapłaty, NIE faktura wystawiona przez sprzedawcę
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -179,6 +179,46 @@
     return null;
   }
 
+  // Rozbicie ceny (Podsuma/W dostawie/Kupon/Szacowane opłaty importowe) jest domyślnie
+  // zwinięte — pozycje poza Podsuma/Suma nie renderują się w DOM, dopóki nie kliknie się
+  // strzałki ".switch-icon". Strona ładuje się zawsze zwinięta, więc jedno kliknięcie
+  // na starcie wystarczy (nie trzeba sprawdzać stanu ikony).
+  async function expandPriceBreakdown() {
+    try {
+      const icon = document.querySelector(".switch-icon");
+      if (!icon) return;
+      icon.click();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } catch (e) {
+      console.error("[ZG] Błąd rozwijania podsumowania cen:", e);
+    }
+  }
+
+  // Zamiast liczyć "co zostało" jako Koszt dostawy/Rabat, bierzemy dosłownie te same
+  // wiersze, które AliExpress pokazuje w rozbiciu ceny zamówienia (Podsuma, W dostawie,
+  // Kupon sklepu, Kupon AliExpress, Monety, Szacowane opłaty importowe) — ten sam
+  // generyczny wiersz-komponent (data-pl="order_price_item_title"/"..._value"), z
+  // którego aliexpress-invoice-generator.user.js wyciąga tylko opłaty importowe.
+  // "Suma" (finalna, pogrubiona) nie jest częścią tej listy — jest parsowana osobno,
+  // tak jak dotychczas, przez .rightPriceClass.
+  function scrapePriceBreakdown() {
+    const rows = [];
+    try {
+      document.querySelectorAll(".order-price-item").forEach((row) => {
+        const titleEl = row.querySelector('[data-pl="order_price_item_title"]');
+        const valueEl = row.querySelector('[data-pl="order_price_item_value"]');
+        if (!titleEl || !valueEl) return;
+
+        const title = titleEl.textContent.trim();
+        const value = valueEl.textContent.trim();
+        if (title && value) rows.push({ title, value });
+      });
+    } catch (e) {
+      console.error("[ZG] Błąd parsowania rozbicia ceny:", e);
+    }
+    return rows;
+  }
+
   function getSellerInfo() {
     const storeEl = document.querySelector(".order-detail-item-store");
     let name = "AliExpress Seller";
@@ -194,7 +234,9 @@
     return { name, url };
   }
 
-  function scrapeData() {
+  async function scrapeData() {
+    await expandPriceBreakdown();
+
     const urlParams = new URLSearchParams(window.location.search);
     const orderId = urlParams.get("orderId") || "---";
 
@@ -220,6 +262,7 @@
       seller: { name: sellerInfo.name, storeUrl: sellerInfo.url },
       lineItems: scrapeLineItems(),
       parsedTotalStr: totalOrderPrice,
+      priceBreakdown: scrapePriceBreakdown(),
       url: window.location.href,
     };
   }
@@ -240,13 +283,25 @@
     span.innerText = "Zestawienie (PDF)";
     btn.appendChild(span);
 
-    btn.onclick = () => {
+    btn.onclick = async () => {
+      const originalText = span.innerText;
+      span.innerText = "Wczytywanie...";
+      btn.disabled = true;
+
       try {
-        const data = scrapeData();
+        const data = await scrapeData();
         openGenerator(data);
       } catch (e) {
         console.error("[ZG] Błąd przy zbieraniu danych:", e);
+        span.innerText = "Błąd!";
+        setTimeout(() => {
+          span.innerText = originalText;
+          btn.disabled = false;
+        }, 2000);
+        return;
       }
+      span.innerText = originalText;
+      btn.disabled = false;
     };
 
     targetContainer.appendChild(btn);
@@ -293,21 +348,8 @@
       totalGross: item.grossUnitPrice * item.quantity,
     }));
 
-    const itemsSum = calculatedItems.reduce((acc, item) => acc + item.totalGross, 0);
     const totalOrderPrice =
       parseFloat((parsedData.parsedTotalStr || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
-
-    const difference = totalOrderPrice - itemsSum;
-    if (Math.abs(difference) > 0.01) {
-      const desc = difference > 0 ? "Koszt dostawy (Shipping)" : "Rabat / Kupon (Discount)";
-      calculatedItems.push({
-        description: desc,
-        productUrl: null,
-        quantity: 1,
-        grossUnitPrice: difference,
-        totalGross: difference,
-      });
-    }
 
     const initialDate = parsedData.orderDate || new Date().toISOString().slice(0, 10);
     const sellerName = parsedData.seller?.name || "AliExpress Seller";
@@ -333,6 +375,8 @@
         rawText: `${buyerConfig.name}\nNIP: ${buyerConfig.taxId}\n${buyerConfig.addressFull}`,
       },
       lineItems: calculatedItems,
+      priceBreakdown: parsedData.priceBreakdown || [],
+      totals: { totalGross: totalOrderPrice },
       sourceUrl: parsedData.url,
     };
 
@@ -389,6 +433,7 @@
 
         <div class="zg-totals-section">
           <table class="zg-totals-table">
+            <tbody id="zg-breakdownRows"></tbody>
             <tr class="zg-total-final"><td>RAZEM (zapłacono):</td><td><span id="zg-displayGross">0.00</span> PLN</td></tr>
           </table>
         </div>
@@ -502,13 +547,31 @@
       updateTotalDisplay();
     }
 
+    // Suma jest tą, którą AliExpress faktycznie pobrał (patrz totals.totalGross
+    // ustawione w openGenerator z .rightPriceClass) — edycja pozycji towarowych jej
+    // nie przelicza, bo pozycje towarowe to tylko rozbicie tego, co wchodzi w Podsuma,
+    // a nie jedyne źródło sumy końcowej.
     function updateTotalDisplay() {
-      const totalGross = data.lineItems.reduce((acc, item) => acc + item.totalGross, 0);
-      data.totals = { totalGross };
-      qs("zg-displayGross").innerText = totalGross.toFixed(2);
+      qs("zg-displayGross").innerText = data.totals.totalGross.toFixed(2);
+    }
+
+    function renderBreakdownRows() {
+      const tbody = qs("zg-breakdownRows");
+      tbody.innerHTML = "";
+      (data.priceBreakdown || []).forEach((row) => {
+        const tr = document.createElement("tr");
+        const tdTitle = document.createElement("td");
+        tdTitle.textContent = `${row.title}:`;
+        const tdValue = document.createElement("td");
+        tdValue.textContent = row.value;
+        tr.appendChild(tdTitle);
+        tr.appendChild(tdValue);
+        tbody.appendChild(tr);
+      });
     }
 
     renderItemsTable();
+    renderBreakdownRows();
     updateTotalDisplay();
 
     // --- Добавление позиции ---
@@ -841,6 +904,10 @@
               table: {
                 widths: ["auto", "auto"],
                 body: [
+                  ...(data.priceBreakdown || []).map((row) => [
+                    { text: `${row.title}:`, alignment: "right", fontSize: 9 },
+                    { text: row.value, alignment: "right", fontSize: 9 },
+                  ]),
                   [
                     { text: "RAZEM (zapłacono):", bold: true, alignment: "right", fillColor: "#f0f0f0" },
                     { text: `${data.totals.totalGross.toFixed(2)} PLN`, bold: true, fontSize: 12, alignment: "right", fillColor: "#f0f0f0" },

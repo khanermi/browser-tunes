@@ -170,6 +170,35 @@ wystawiona только sprzedawcą, art. 106b ustawy o VAT).
 - Нет разбивки Netto/VAT/Brutto и нет отдельного номера документа (`FV-...`) —
   только "RAZEM (zapłacono)", дата и номер zamówienia (сам заказ, не выдуманный
   номер документа).
+- **Итоговая сумма и строки под ней — дословный дубликат блока "Rozbicie ceny
+  zamówienia" со страницы заказа, а не вычисленная разница.** Раньше
+  `openGenerator` считал `totalOrderPrice - itemsSum` и подписывал остаток
+  одной строкой "Koszt dostawy (Shipping)"/"Rabat / Kupon (Discount)" — это
+  было неверно уже потому, что в остаток попадали сразу все компоненты
+  (Kupon sklepu, Kupon AliExpress, Monety, Szacowane opłaty importowe), не
+  различимые между собой, а "W dostawie: Bezpłatna dostawa" вообще не деньги.
+  Теперь `scrapeData()` сначала зовёт `expandPriceBreakdown()` (клик по
+  `.switch-icon` — блок рендерится в DOM только после разворачивания, ждём
+  ~500мс), затем `scrapePriceBreakdown()` читает ВСЕ строки
+  `.order-price-item` (`data-pl="order_price_item_title"`/`"...value"` —
+  тот же общий компонент, из которого `aliexpress-invoice-generator.user.js`
+  вынимает только опаты импортовые) без фильтрации — это автоматически даёт
+  Podsuma (она тоже такая строка, просто всегда видна) и всё, что появляется
+  после разворачивания (W dostawie, Kupon sklepu, Kupon AliExpress, Monety,
+  Szacowane opłaty importowe), в том порядке, в каком их показывает
+  AliExpress. Строки хранятся как `{title, value}` — сырой текст без
+  парсинга чисел (включая "Bezpłatna dostawa" как есть) — и просто
+  выводятся построчно и в модалке (`#zg-breakdownRows`), и в PDF, над
+  финальной "RAZEM (zapłacono)". Финальная сумма при этом по-прежнему берётся
+  из `.rightPriceClass` (`data.totals.totalGross`, выставляется один раз в
+  `openGenerator` и не пересчитывается при редактировании таблицы товаров —
+  таблица товаров теперь чисто информационная детализация закупки, а не
+  единственный источник итога).
+- `aliexpress-invoice-generator.user.js` при апстрим-фиксах эту правку ещё
+  **не получил** — там по-прежнему живёт старая эвристика "остаток = Koszt
+  dostawy/Rabat" (см. `openGenerator` в нём же, после вычета `importFees`).
+  Если понадобится тот же честный breakdown и в fakturze — переносить
+  `expandPriceBreakdown`/generic `scrapePriceBreakdown` оттуда, а не наоборот.
 - Блок Sprzedawca/Nabywca — один последовательный текстовый блок, а не два
   зеркальных столбца (та вёрстка визуально имитирует шапку инвойса).
 - Раз в документе только "RAZEM", без разбивок, здесь нет ни парсинга
