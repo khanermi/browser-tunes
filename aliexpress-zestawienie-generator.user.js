@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AliExpress Zestawienie PL Generator
 // @namespace    local
-// @version      1.2.0
+// @version      1.2.1
 // @description  Generuje zestawienie własne (PDF, PL) na podstawie zamówienia AliExpress — dokument pomocniczy do paragonu/dowodu zapłaty, NIE faktura wystawiona przez sprzedawcę
 // @author       khanermi
 // @match        *://*.aliexpress.com/p/order/detail*
@@ -181,14 +181,35 @@
 
   // Rozbicie ceny (Podsuma/W dostawie/Kupon/Szacowane opłaty importowe) jest domyślnie
   // zwinięte — pozycje poza Podsuma/Suma nie renderują się w DOM, dopóki nie kliknie się
-  // strzałki ".switch-icon". Strona ładuje się zawsze zwinięta, więc jedno kliknięcie
-  // na starcie wystarczy (nie trzeba sprawdzać stanu ikony).
+  // strzałki ".switch-icon".
+  //
+  // Kliknięcie w tę strzałkę jest TOGGLE, a generator nie przeładowuje strony: drugie
+  // uruchomienie na tej samej stronie zwijało blok z powrotem (w modalce zostawały tylko
+  // Podsuma i Suma), trzecie znów rozwijało. Dlatego nie klikamy w ciemno — stan ikony
+  // (klasa/atrybut) nie jest stabilny w DOM AliExpress, więc sprawdzamy sam EFEKT: jeśli
+  // po kliknięciu widocznych wierszy jest mniej niż przed nim, to znaczy, że blok był już
+  // rozwinięty i właśnie go zwinęliśmy — wtedy cofamy kliknięcie.
+  const BREAKDOWN_TOGGLE_WAIT_MS = 500;
+
+  function countVisibleBreakdownRows() {
+    return Array.from(document.querySelectorAll(".order-price-item")).filter(
+      (row) => row.offsetParent !== null
+    ).length;
+  }
+
   async function expandPriceBreakdown() {
     try {
       const icon = document.querySelector(".switch-icon");
       if (!icon) return;
+
+      const before = countVisibleBreakdownRows();
       icon.click();
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, BREAKDOWN_TOGGLE_WAIT_MS));
+
+      if (countVisibleBreakdownRows() < before) {
+        icon.click();
+        await new Promise((resolve) => setTimeout(resolve, BREAKDOWN_TOGGLE_WAIT_MS));
+      }
     } catch (e) {
       console.error("[ZG] Błąd rozwijania podsumowania cen:", e);
     }
