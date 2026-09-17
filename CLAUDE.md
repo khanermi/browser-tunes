@@ -16,7 +16,7 @@
   на логику не влияет).
 - Внешние библиотеки подключаются через `@require` на CDN с закреплённой
   версией (не через bundler) — см. пример в
-  `aliexpress-invoice-generator.user.js`.
+  `aliexpress-zestawienie-generator.user.js`.
 
 ## Что уже лежит в репозитории
 
@@ -131,17 +131,29 @@
   следующая после `1.0` — сразу `1.2`: Tampermonkey мог успеть подтянуть
   `1.1` и не увидел бы апдейт с тем же номером.
 
-### `aliexpress-invoice-generator.user.js`
-Сайт: `aliexpress.com/p/order/detail*`. Портированная логика Chrome-расширения
-[`InvoiceExtension`](https://github.com/khanermi/InvoiceExtension) (парсинг
-заказа + генерация PDF-фактуры по польским требованиям), переписанная в один
-userscript, чтобы не поддерживать отдельное расширение:
+### `aliexpress-zestawienie-generator.user.js`
+Сайт: `aliexpress.com/p/order/detail*`. Генерирует "ZESTAWIENIE WŁASNE" —
+вспомогательный документ на основе данных заказа AliExpress, а не fakturę.
+Причина, почему это не faktura: для покупателя-nievatowca (JDG na zwolnieniu
+podmiotowym z VAT) AliExpress физически не выпускает fakturę с данными фирмы,
+а самостоятельно генерировать документ, выглядящий как faktura wystawiona
+przez sprzedawcę (с его брендингом/номером/структурой инвойса), —
+юридически некорректно, даже если товар настоящий и данные продавца верны
+(faktura может быть wystawiona только sprzedawcą, art. 106b ustawy o VAT).
 
-- Парсит страницу заказа (товары, цену, дату, продавца, НДС), добавляет
-  кнопку "Faktura (PDF)".
-- Вместо отдельной страницы расширения (`chrome.tabs.create`) редактор
-  инвойса открывается модалкой поверх текущей страницы (все id/классы с
-  префиксом `ig-`, чтобы не конфликтовать с версткой AliExpress).
+(Был также `aliexpress-invoice-generator.user.js` — форк-предок с настоящей
+разбивкой Netto/VAT/Brutto для VAT-плательщиков, портированный из Chrome-
+расширения [`InvoiceExtension`](https://github.com/khanermi/InvoiceExtension).
+Удалён из репозитория (не понадобился) — если станет снова нужен, проще
+написать заново на основе актуального zestawienie, чем поднимать из истории
+git: `parseVatFromDom`/`getVatAmountAsync`/`ig-`-вёрстка использовали свою
+DOM-логику для VAT, которая параллельно эволюционировала с zestawienie.)
+
+Устройство скрипта:
+- Парсит страницу заказа (товары, цену, дату, продавца), добавляет кнопку
+  "Zestawienie (PDF)".
+- Редактор открывается модалкой поверх текущей страницы (все id/классы с
+  префиксом `zg-`, чтобы не конфликтовать с версткой AliExpress).
 - Реквизиты покупателя (своей фирмы) хранятся через `GM_setValue`/
   `GM_getValue`, редактируются через пункт меню Tampermonkey
   ("⚙️ Ustawienia nabywcy").
@@ -149,21 +161,9 @@ userscript, чтобы не поддерживать отдельное расш
   версия закреплена (`0.3.3`); `vfs_fonts.js` от той же версии подключён
   отдельным `@require` следом (порядок важен — `vfs_fonts.js` регистрирует
   шрифты в уже загруженном `pdfMake`).
-- Оригинальные CSS-селекторы парсинга DOM AliExpress скопированы как есть из
-  расширения — при изменении вёрстки AliExpress могут потребовать правки
-  (это уязвимое место любого DOM-скрапинга, не специфика userscript'а).
-
-### `aliexpress-zestawienie-generator.user.js`
-Сайт: `aliexpress.com/p/order/detail*`. Форк `aliexpress-invoice-generator.user.js`
-для случая, когда покупатель — nievatowiec (JDG na zwolnieniu podmiotowym z VAT):
-AliExpress физически не выпускает fakturę с данными фирмы, а самостоятельно
-генерировать документ, выглядящий как faktura wystawiona przez sprzedawcę
-(с его брендингом/номером/структурой инвойса), — юридически некорректно,
-даже если товар настоящий и данные продавца верны (faktura может быть
-wystawiona только sprzedawcą, art. 106b ustawy o VAT).
-
-Отличия от `aliexpress-invoice-generator.user.js` (парсинг DOM и AI-флоу общие,
-портируются в обе стороны при апстрим-фиксах):
+- Оригинальные CSS-селекторы парсинга DOM AliExpress — при изменении
+  вёрстки AliExpress могут потребовать правки (это уязвимое место любого
+  DOM-скрапинга, не специфика userscript'а).
 - Документ называется "ZESTAWIENIE WŁASNE", не "FAKTURA"; в PDF есть явная
   строка-дисклеймер, что это не faktura sprzedawcy.
 - Нет лого AliExpress в PDF.
@@ -181,38 +181,20 @@ wystawiona только sprzedawcą, art. 106b ustawy o VAT).
   `.switch-icon` — блок рендерится в DOM только после разворачивания, ждём
   ~500мс), затем `scrapePriceBreakdown()` читает ВСЕ строки
   `.order-price-item` (`data-pl="order_price_item_title"`/`"...value"` —
-  тот же общий компонент, из которого `aliexpress-invoice-generator.user.js`
-  вынимает только опаты импортовые) без фильтрации — это автоматически даёт
-  Podsuma (она тоже такая строка, просто всегда видна) и всё, что появляется
-  после разворачивания (W dostawie, Kupon sklepu, Kupon AliExpress, Monety,
-  Szacowane opłaty importowe), в том порядке, в каком их показывает
-  AliExpress. Строки хранятся как `{title, value}` — сырой текст без
-  парсинга чисел (включая "Bezpłatna dostawa" как есть) — и просто
+  общий компонент-строка для всего блока) без фильтрации — это автоматически
+  даёт Podsuma (она тоже такая строка, просто всегда видна) и всё, что
+  появляется после разворачивания (W dostawie, Kupon sklepu, Kupon
+  AliExpress, Monety, Szacowane opłaty importowe), в том порядке, в каком их
+  показывает AliExpress. Строки хранятся как `{title, value}` — сырой текст
+  без парсинга чисел (включая "Bezpłatna dostawa" как есть) — и просто
   выводятся построчно и в модалке (`#zg-breakdownRows`), и в PDF, над
   финальной "RAZEM (zapłacono)". Финальная сумма при этом по-прежнему берётся
   из `.rightPriceClass` (`data.totals.totalGross`, выставляется один раз в
   `openGenerator` и не пересчитывается при редактировании таблицы товаров —
   таблица товаров теперь чисто информационная детализация закупки, а не
   единственный источник итога).
-- `aliexpress-invoice-generator.user.js` при апстрим-фиксах эту правку ещё
-  **не получил** — там по-прежнему живёт старая эвристика "остаток = Koszt
-  dostawy/Rabat" (см. `openGenerator` в нём же, после вычета `importFees`).
-  Если понадобится тот же честный breakdown и в fakturze — переносить
-  `expandPriceBreakdown`/generic `scrapePriceBreakdown` оттуда, а не наоборот.
 - Блок Sprzedawca/Nabywca — один последовательный текстовый блок, а не два
-  зеркальных столбца (та вёрстка визуально имитирует шапку инвойса).
-- Раз в документе только "RAZEM", без разбивок, здесь нет ни парсинга
-  VAT (`parseVatFromDom`/`getVatAmountAsync`), ни expand+парсинга "Szacowane
-  opłaty importowe" (`expandPriceBreakdown`/`scrapeImportFees` из
-  `aliexpress-invoice-generator.user.js`) — импортные пошлины при наличии
-  молча попадают в общую "różnicę" (Koszt dostawy/Rabat), отдельной строкой
-  не выделяются. Кнопка открытия редактора (`injectButton`) поэтому
-  синхронная — сбор данных не требует ожидания раскрытия блока цены.
-- AI-шаг в получении данных продавца сознательно остался на Gemini (бесплатно),
-  а не на Claude, на который в `aliexpress-invoice-generator.user.js` уже
-  переехали — при переносе апстрим-фиксов в эту сторону это единственная
-  точка, которую переносить не нужно. Прямая ссылка на credential/license-
-  страницу продавца (по `storeNum` из URL магазина) при этом перенесена.
+  зеркальных столбца.
 - Кнопка "Pobierz PDF + Paragon" в редакторе скачивает **два файла одним
   кликом**: сам zestawienie и оригинальный paragon, который рендерит сам
   AliExpress в своей модалке "Paragon" (`capturePLReceiptPng`). Эта модалка —
