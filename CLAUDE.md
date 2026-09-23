@@ -113,8 +113,19 @@
   профиль; домен в `@match` стоит только ради iframe-ветки.
 
 ### `kinogo-allplay-episode-nav.user.js`
-Сайт: `kinogo.ec`, "Плеер 3" (AllPlay, iframe с `*.stravers.live`).
-- `Ctrl+←/→` — жмёт кнопки плеера `button[data-allplay="next"|"prev"]`.
+Сайт: `kinogo.ec`, "Плеер 3" (AllPlay, iframe с `*.stravers.live`) и
+"Смотреть онлайн" (Playerjs, iframe с `cinemar.cc`).
+- `Ctrl+←/→` — жмёт кнопки серий плеера: у AllPlay
+  `button[data-allplay="next"|"prev"]`, у Playerjs
+  `.playlist-nav > button.playlist-next|playlist-prev` (у крайней серии —
+  `disabled`). Нажатие внутри фрейма глушится `stopImmediatePropagation` на
+  `window` в capture — голые стрелки у плееров это перемотка, и Ctrl они не
+  проверяют.
+- "Плеер 1" (`api.ortified.ws`, player-venom) **не поддержан**: в
+  автоматизированной вкладке его UI так и не отрисовался. По исходникам
+  `player-venom@0.3.6` при `ui.prevNext` у него есть кнопки
+  `.episode-next`/`.episode-prev` (класс не хэширован) — если понадобится,
+  начинать с этого.
   Из топ-документа они недостижимы (cross-origin), поэтому топ шлёт
   `postMessage` в iframe, а жмёт ветка скрипта внутри плеера. Собственный
   хоткей внутри плеера включается только при `document.referrer` = kinogo

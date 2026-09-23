@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         KinoGo AllPlay Episode Nav
 // @namespace    local
-// @version      1.2
-// @description  Ctrl+Left/Right — next/previous episode в Плеере 3 (AllPlay) на kinogo.ec. F9 — псевдо-fullscreen плеера (Esc — выход). Работает и когда фокус внутри iframe плеера (postMessage-мост).
+// @version      1.3
+// @description  Ctrl+Left/Right — next/previous episode в Плеере 3 (AllPlay) и во вкладке "Смотреть онлайн" (Playerjs, cinemar.cc) на kinogo.ec. F9 — псевдо-fullscreen плеера (Esc — выход). Работает и когда фокус внутри iframe плеера (postMessage-мост).
 // @match        *://kinogo.ec/*
 // @match        *://*.stravers.live/*
+// @match        *://cinemar.cc/*
+// @match        *://*.cinemar.cc/*
 // @run-at       document-start
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/khanermi/browser-tunes/main/kinogo-allplay-episode-nav.user.js
@@ -27,21 +29,30 @@
     return true;
   }
 
-  // Кнопки плеера AllPlay: <button data-allplay="next"> / <button data-allplay="prev">
+  // Кнопки серий у плееров разных вкладок:
+  // - AllPlay ("Плеер 3"): <button data-allplay="next|prev">
+  // - Playerjs ("Смотреть онлайн", cinemar.cc): <button class="playlist-next|playlist-prev">
+  //   в .playlist-nav; у крайней серии кнопка стоит с disabled.
+  const BUTTON_SELECTORS = {
+    next: 'button[data-allplay="next"], button.playlist-next',
+    prev: 'button[data-allplay="prev"], button.playlist-prev',
+  };
+
   function clickButton(dir) {
-    const btn = document.querySelector(`button[data-allplay="${dir}"]`);
+    const btn = document.querySelector(BUTTON_SELECTORS[dir]);
     if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') return false;
     btn.click();
     return true;
   }
 
-  // ==================== Внутри плеера (AllPlay, cross-origin iframe) ====================
+  // ==================== Внутри плеера (cross-origin iframe) ====================
   //
-  // Плеер отдаётся с домена *.stravers.live, поэтому из верхнего документа
-  // (kinogo.ec) кнопки недостижимы (cross-origin) — этот домен стоит в @match
-  // ради этой ветки. Он используется и другими встраивающими сайтами, поэтому
-  // собственный хоткей внутри фрейма включаем только когда referrer — kinogo.ec;
-  // с чужих сайтов сюда прилетают только форварднутые сообщения.
+  // Плееры отдаются с чужих доменов (*.stravers.live — AllPlay, cinemar.cc —
+  // Playerjs), поэтому из верхнего документа (kinogo.ec) кнопки недостижимы
+  // (cross-origin) — эти домены стоят в @match ради этой ветки. Их встраивают
+  // и другие сайты, поэтому собственный хоткей внутри фрейма включаем только
+  // когда referrer — kinogo.ec; с чужих сайтов сюда прилетают только
+  // форварднутые сообщения.
   if (window.top !== window.self) {
     let embedder = '';
     try {
@@ -57,7 +68,8 @@
     });
 
     if (trustedEmbed) {
-      document.addEventListener(
+      // На window в capture-фазе — раньше любых обработчиков плеера на document.
+      window.addEventListener(
         'keydown',
         (e) => {
           if (isRealTextInput(e.target)) return;
@@ -78,8 +90,10 @@
 
           if (!e.ctrlKey || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
           if (clickButton(e.key === 'ArrowRight' ? 'next' : 'prev')) {
+            // Голые стрелки у плееров — перемотка, и Ctrl они не проверяют:
+            // глушим до их обработчиков, иначе серия переключится с перемоткой.
             e.preventDefault();
-            e.stopPropagation();
+            e.stopImmediatePropagation();
           }
         },
         true
