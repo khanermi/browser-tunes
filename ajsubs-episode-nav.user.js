@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.0
+// @version      1.1
 // @description  Ctrl+Left/Right — переключение серии на ajsubs.ru (AnimeJoy). Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://ajsubs.ru/*
 // @match        *://animejoya.ru/player/*
@@ -148,6 +148,79 @@
           { type: NAV_MESSAGE, delta: e.key === 'ArrowRight' ? 1 : -1 },
           '*'
         );
+      },
+      true
+    );
+
+    installSpaceFallback();
+  }
+
+  // Space после переключения. Фокус на <video> стоит, но Playerjs ("Наш плеер")
+  // хоткеи слушает только когда считает плеер "своим": в его keydown стоит
+  // проверка глобального флага "активный плеер" + "мышь над плеером", которые
+  // выставляются наведением/кликом, а не фокусом. Имя флага обфусцировано —
+  // выставлять его руками хрупко. Поэтому страхуемся по факту: если за
+  // SPACE_CHECK_MS после Space состояние плеера не поменялось, значит плеер
+  // нажатие проигнорировал — переключаем play/pause сами. Если плеер Space
+  // обработал (мышь над ним), состояние уже другое, и мы ничего не делаем.
+  //
+  // У Playerjs переключаем через его API (window.playerjs — так его называет
+  // сама страница animejoya.ru/player/playerjs.html; @grant none → мы в
+  // контексте страницы): до первого запуска src у <video> ещё не выставлен,
+  // и голый video.play() падает с AbortError. Для остальных плееров —
+  // напрямую через <video>.
+  const SPACE_CHECK_MS = 150;
+
+  function playerjsApi() {
+    const p = window.playerjs;
+    return p && typeof p.api === 'function' ? p : null;
+  }
+
+  function isPlaying(video) {
+    const pjs = playerjsApi();
+    if (pjs) {
+      try {
+        return !!pjs.api('playing');
+      } catch (e) {
+        /* упадём на <video> */
+      }
+    }
+    return !video.paused;
+  }
+
+  function togglePlayback(video) {
+    const pjs = playerjsApi();
+    if (pjs) {
+      try {
+        pjs.api('toggle');
+        return;
+      } catch (e) {
+        /* упадём на <video> */
+      }
+    }
+    if (video.paused) {
+      const p = video.play();
+      if (p && p.catch) p.catch(() => {});
+    } else {
+      video.pause();
+    }
+  }
+
+  function installSpaceFallback() {
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key !== ' ' || e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
+        if (isRealTextInput(e.target)) return;
+
+        const video = document.querySelector('video');
+        if (!video) return;
+        const wasPlaying = isPlaying(video);
+
+        setTimeout(() => {
+          if (!video.isConnected || isPlaying(video) !== wasPlaying) return;
+          togglePlayback(video);
+        }, SPACE_CHECK_MS);
       },
       true
     );
