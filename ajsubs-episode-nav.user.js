@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.2
+// @version      1.3
 // @description  Ctrl+Left/Right — переключение серии на ajsubs.ru (AnimeJoy). Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://ajsubs.ru/*
 // @match        *://animejoya.ru/player/*
@@ -33,6 +33,7 @@
   // позже, чем прилетает просьба его сфокусировать — поэтому опрашиваем.
   const VIDEO_POLL_MS = 250;
   const VIDEO_POLL_TRIES = 24; // ~6 с
+  const ARM_POLL_TRIES = 60; // ~15 с — первый "клик" по плееру после загрузки
 
   // В топ-документе: клик по серии пересоздаёт <iframe>, так что первая
   // просьба почти всегда уходит в ещё не загруженный документ. Шлём серией,
@@ -98,6 +99,7 @@
           /* не критично: фокус останется на самом <iframe> */
         }
         if (document.activeElement === video) {
+          armPlayer();
           report(true);
           return;
         }
@@ -156,24 +158,37 @@
     installSpaceFallback();
   }
 
-  // Родные хоткеи Playerjs ("Наш плеер": Space, F, стрелки, звук) закрыты
-  // флагом "мышь над плеером" — его keydown/keyup проверяют внутренние флаги,
-  // которые выставляет только mouseenter/mouseover по плееру, а не фокус. После
-  // Ctrl+←/→ мышь обычно над списком серий, а не над плеером, и все его хоткеи
-  // молчат. Поэтому на каждое нажатие (в capture на window — раньше
-  // обработчиков плеера) синхронно "наводим мышь" на центр плеера
-  // синтетическими событиями: дальше клавишу обрабатывает сам плеер, со всей
-  // своей логикой. Проверено на живом Playerjs: без наведения Space
-  // игнорируется, с наведением в том же keydown — play/pause срабатывает.
-  // mouseenter/pointerenter не всплывают, поэтому шлём их на всю цепочку
-  // предков — какой из элементов плеер слушает, снаружи не видно.
-  function armPlayerHover() {
+  // Родные хоткеи Playerjs ("Наш плеер") закрыты двумя разными внутренними
+  // флагами, и оба ставятся мышью, а не фокусом — после Ctrl+←/→ мышь обычно
+  // над списком серий, и хоткеи молчат:
+  //  - Space / F / M пускает флаг "мышь над плеером" (в коде `o.4C`), его
+  //    ставит mouseenter/mouseover — синхронно;
+  //  - стрелки (перемотка ←/→, громкость ↑/↓) смотрят только на флаг "был
+  //    клик по плееру" (`o.6N`), его ставит mouseup по плееру — и не сразу, а
+  //    отложенным таймером (проверено: через 50 мс ещё нет, через ~650 мс уже
+  //    есть). При этом любой mouseup, всплывший до документа плеера, сначала
+  //    синхронно сбрасывает этот флаг и только потом таймер ставит его снова.
+  // Поэтому "наведение" шлём синхронно на каждое нажатие (capture на window —
+  // раньше обработчиков плеера), а "клик" (голый mouseup, без mousedown —
+  // так плеер не считает это кликом по видео и play/pause не трогает;
+  // проверено) — ТОЛЬКО заранее: когда в плеере появился <video> и когда после
+  // переключения серии ставим фокус. "Клик" на каждое нажатие ломает стрелки:
+  // mouseup обнуляет флаг ровно в момент, когда плеер проверяет эту же
+  // клавишу (проверено — громкость переставала меняться). mouseenter/
+  // pointerenter не всплывают, поэтому шлём их на всю цепочку предков — какой
+  // из элементов плеер слушает, снаружи не видно.
+  function playerCenter() {
     const x = window.innerWidth / 2;
     const y = window.innerHeight / 2;
     const el = document.elementFromPoint(x, y);
-    if (!el) return;
+    return el ? { el, init: { clientX: x, clientY: y, view: window } } : null;
+  }
 
-    const init = { clientX: x, clientY: y, view: window };
+  function armPlayerHover() {
+    const c = playerCenter();
+    if (!c) return;
+    const { el, init } = c;
+
     const chain = [];
     for (let n = el; n; n = n.parentElement) chain.push(n);
     for (const n of chain.reverse()) {
@@ -184,6 +199,19 @@
     el.dispatchEvent(new MouseEvent('mouseover', { ...init, bubbles: true }));
     el.dispatchEvent(new PointerEvent('pointermove', { ...init, bubbles: true }));
     el.dispatchEvent(new MouseEvent('mousemove', { ...init, bubbles: true }));
+  }
+
+  function armPlayerClick() {
+    const c = playerCenter();
+    if (!c) return;
+    const init = { ...c.init, bubbles: true, button: 0 };
+    c.el.dispatchEvent(new PointerEvent('pointerup', init));
+    c.el.dispatchEvent(new MouseEvent('mouseup', init));
+  }
+
+  function armPlayer() {
+    armPlayerHover();
+    armPlayerClick();
   }
 
   function installHoverArming() {
@@ -197,6 +225,17 @@
       },
       true
     );
+
+    // Первый "клик" — как только плеер построился, чтобы стрелки работали уже
+    // с первого нажатия, даже если серию не переключали хоткеем.
+    let tries = 0;
+    (function waitForVideo() {
+      if (document.querySelector('video')) {
+        armPlayer();
+        return;
+      }
+      if (++tries < ARM_POLL_TRIES) setTimeout(waitForVideo, VIDEO_POLL_MS);
+    })();
   }
 
   // Страховка для Space поверх installHoverArming (добавлена в 1.1, до того как
