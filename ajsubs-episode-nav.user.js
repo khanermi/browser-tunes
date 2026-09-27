@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.1
+// @version      1.2
 // @description  Ctrl+Left/Right — переключение серии на ajsubs.ru (AnimeJoy). Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://ajsubs.ru/*
 // @match        *://animejoya.ru/player/*
@@ -152,10 +152,56 @@
       true
     );
 
+    installHoverArming();
     installSpaceFallback();
   }
 
-  // Space после переключения. Фокус на <video> стоит, но Playerjs ("Наш плеер")
+  // Родные хоткеи Playerjs ("Наш плеер": Space, F, стрелки, звук) закрыты
+  // флагом "мышь над плеером" — его keydown/keyup проверяют внутренние флаги,
+  // которые выставляет только mouseenter/mouseover по плееру, а не фокус. После
+  // Ctrl+←/→ мышь обычно над списком серий, а не над плеером, и все его хоткеи
+  // молчат. Поэтому на каждое нажатие (в capture на window — раньше
+  // обработчиков плеера) синхронно "наводим мышь" на центр плеера
+  // синтетическими событиями: дальше клавишу обрабатывает сам плеер, со всей
+  // своей логикой. Проверено на живом Playerjs: без наведения Space
+  // игнорируется, с наведением в том же keydown — play/pause срабатывает.
+  // mouseenter/pointerenter не всплывают, поэтому шлём их на всю цепочку
+  // предков — какой из элементов плеер слушает, снаружи не видно.
+  function armPlayerHover() {
+    const x = window.innerWidth / 2;
+    const y = window.innerHeight / 2;
+    const el = document.elementFromPoint(x, y);
+    if (!el) return;
+
+    const init = { clientX: x, clientY: y, view: window };
+    const chain = [];
+    for (let n = el; n; n = n.parentElement) chain.push(n);
+    for (const n of chain.reverse()) {
+      n.dispatchEvent(new PointerEvent('pointerenter', { ...init, bubbles: false }));
+      n.dispatchEvent(new MouseEvent('mouseenter', { ...init, bubbles: false }));
+    }
+    el.dispatchEvent(new PointerEvent('pointerover', { ...init, bubbles: true }));
+    el.dispatchEvent(new MouseEvent('mouseover', { ...init, bubbles: true }));
+    el.dispatchEvent(new PointerEvent('pointermove', { ...init, bubbles: true }));
+    el.dispatchEvent(new MouseEvent('mousemove', { ...init, bubbles: true }));
+  }
+
+  function installHoverArming() {
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        if (isRealTextInput(e.target)) return;
+        if (!document.querySelector('video')) return;
+        armPlayerHover();
+      },
+      true
+    );
+  }
+
+  // Страховка для Space поверх installHoverArming (добавлена в 1.1, до того как
+  // нашёлся способ с наведением; оставлена на случай, если плеер всё-таки
+  // проигнорирует нажатие). Фокус на <video> стоит, но Playerjs ("Наш плеер")
   // хоткеи слушает только когда считает плеер "своим": в его keydown стоит
   // проверка глобального флага "активный плеер" + "мышь над плеером", которые
   // выставляются наведением/кликом, а не фокусом. Имя флага обфусцировано —
