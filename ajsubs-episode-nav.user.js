@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.3
-// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru (AnimeJoy). Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// @version      1.4
+// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru (AnimeJoy). F9 — псевдо-fullscreen плеера (Esc — выход), кнопка полного экрана плеера Mail включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://ajsubs.ru/*
 // @match        *://animejoya.ru/player/*
 // @match        *://fsst.online/embed/*
@@ -27,6 +27,7 @@
   const NAV_MESSAGE = 'ajsubs-episode-nav';
   const FOCUS_MESSAGE = 'ajsubs-episode-nav-focus-video';
   const FOCUS_ACK = 'ajsubs-episode-nav-video-focused';
+  const FS_MESSAGE = 'ajsubs-episode-nav-fullscreen';
   const SITE_HOST = /(^|\.)ajsubs\.ru$/;
 
   // Внутри плеера: серия грузится асинхронно, <video> появляется в документе
@@ -143,7 +144,23 @@
     window.addEventListener(
       'keydown',
       (e) => {
-        if (!isNavKey(e) || isRealTextInput(e.target)) return;
+        if (isRealTextInput(e.target)) return;
+
+        // Псевдо-fullscreen делает верхний документ (растягивает контейнер
+        // плеера) — отсюда только просим. Esc не глушим: плееру он может быть
+        // нужен самому.
+        if (e.key === 'F9') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          window.top.postMessage({ type: FS_MESSAGE, action: 'toggle' }, '*');
+          return;
+        }
+        if (e.key === 'Escape') {
+          window.top.postMessage({ type: FS_MESSAGE, action: 'exit' }, '*');
+          return;
+        }
+
+        if (!isNavKey(e)) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         window.top.postMessage(
@@ -156,6 +173,35 @@
 
     installHoverArming();
     installSpaceFallback();
+    if (location.hostname === 'my.mail.ru') installMailFullscreenIntercept();
+  }
+
+  // Родной полный экран плеера Mail внутри ajsubs не включается: плеер зовёт
+  // обычный requestFullscreen на своём контейнере, иконка переключается, а
+  // экран — нет. Поэтому его кнопку (и двойной клик по видео, который у Mail
+  // тоже fullscreen) перехватываем раньше плеера (capture на window) и
+  // включаем тот же псевдо-fullscreen, что и по F9.
+  function installMailFullscreenIntercept() {
+    function intercept(e) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      window.top.postMessage({ type: FS_MESSAGE, action: 'toggle' }, '*');
+    }
+
+    window.addEventListener(
+      'click',
+      (e) => {
+        if (e.target.closest && e.target.closest('.b-video-controls__fullscreen-button')) intercept(e);
+      },
+      true
+    );
+    window.addEventListener(
+      'dblclick',
+      (e) => {
+        if (e.target.closest && e.target.closest('.b-video-html5__video-area')) intercept(e);
+      },
+      true
+    );
   }
 
   // Родные хоткеи Playerjs ("Наш плеер") закрыты двумя разными внутренними
@@ -398,6 +444,61 @@
     }
   }
 
+  // ==================== Псевдо-fullscreen ====================
+  //
+  // До <video> плеера отсюда не дотянуться (cross-origin), поэтому на весь
+  // viewport растягиваем контейнер .playlists-iframe — iframe в нём
+  // width/height 100% и тянется следом. Сайт пересоздаёт сам iframe на каждую
+  // серию/плеер, а контейнер оставляет, так что режим переживает Ctrl+←/→.
+  // Предков с transform/filter, которые сломали бы position: fixed, нет.
+  let fsContainer = null;
+  let savedStyle = null;
+
+  function enterFullscreen() {
+    const container = document.querySelector('.playlists-iframe');
+    if (!container) return;
+
+    savedStyle = container.getAttribute('style');
+    Object.assign(container.style, {
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      width: '100vw',
+      height: '100vh',
+      margin: '0',
+      zIndex: '2147483647',
+    });
+    document.documentElement.style.overflow = 'hidden';
+    fsContainer = container;
+    focusPlayer();
+  }
+
+  function exitFullscreen() {
+    if (!fsContainer) return;
+    if (savedStyle === null) fsContainer.removeAttribute('style');
+    else fsContainer.setAttribute('style', savedStyle);
+    document.documentElement.style.overflow = '';
+    fsContainer = null;
+  }
+
+  function toggleFullscreen() {
+    // Плейлист целиком могли перегрузить аяксом — старый контейнер уже не в DOM.
+    if (fsContainer && !fsContainer.isConnected) exitFullscreen();
+    fsContainer ? exitFullscreen() : enterFullscreen();
+  }
+
+  // Сообщение принимаем только из нашего плеера — в том числе из вложенного в
+  // него фрейма (у некоторых плееров <video> на уровень глубже).
+  function fromPlayer(source) {
+    const frame = playerFrame();
+    if (!frame || !source) return false;
+    for (let w = source, i = 0; w && i < 5; w = w.parent, i++) {
+      if (w === frame.contentWindow) return true;
+      if (w === w.parent) break;
+    }
+    return false;
+  }
+
   // 'switched' / 'boundary' / 'unavailable' (списка нет — хоткей не наш)
   function switchEpisode(delta) {
     const items = visibleEpisodes();
@@ -433,6 +534,12 @@
       return;
     }
 
+    if (data.type === FS_MESSAGE) {
+      if (!fromPlayer(e.source)) return;
+      data.action === 'exit' ? exitFullscreen() : toggleFullscreen();
+      return;
+    }
+
     if (data.type !== NAV_MESSAGE) return;
     if (data.delta !== 1 && data.delta !== -1) return;
     switchEpisode(data.delta);
@@ -443,7 +550,20 @@
   document.addEventListener(
     'keydown',
     (e) => {
-      if (!isNavKey(e) || isRealTextInput(e.target)) return;
+      if (isRealTextInput(e.target)) return;
+
+      if (e.key === 'F9') {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFullscreen();
+        return;
+      }
+      if (e.key === 'Escape' && fsContainer) {
+        exitFullscreen();
+        return;
+      }
+
+      if (!isNavKey(e)) return;
       if (switchEpisode(e.key === 'ArrowRight' ? 1 : -1) !== 'unavailable') {
         e.preventDefault();
         e.stopPropagation();
