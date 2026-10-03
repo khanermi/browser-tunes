@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.2
-// @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// @version      1.3
+// @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
 // @match        *://kodikplayer.com/*
@@ -21,6 +21,7 @@
   const NAV_MESSAGE = 'yummyani-episode-nav';
   const FOCUS_MESSAGE = 'yummyani-episode-nav-focus-video';
   const FOCUS_ACK = 'yummyani-episode-nav-video-focused';
+  const FS_MESSAGE = 'yummyani-episode-nav-fullscreen';
   const SITE_HOST = /(^|\.)yummyani\.me$/;
 
   // Плеер успевает перекрасить активную серию только через ~1-1.5 с после клика
@@ -161,14 +162,49 @@
     document.addEventListener(
       'keydown',
       (e) => {
-        if (!e.ctrlKey || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
         if (isRealTextInput(e.target)) return;
+
+        // Псевдо-fullscreen делает верхний документ (растягивает сам <iframe>
+        // плеера) — отсюда только просим. Esc не глушим: плееру он может быть
+        // нужен самому.
+        if (e.key === 'F9') {
+          e.preventDefault();
+          e.stopPropagation();
+          window.top.postMessage({ type: FS_MESSAGE, action: 'toggle' }, '*');
+          return;
+        }
+        if (e.key === 'Escape') {
+          window.top.postMessage({ type: FS_MESSAGE, action: 'exit' }, '*');
+          return;
+        }
+
+        if (!e.ctrlKey || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
         e.preventDefault();
         e.stopPropagation();
         window.top.postMessage(
           { type: NAV_MESSAGE, delta: e.key === 'ArrowRight' ? 1 : -1 },
           '*'
         );
+      },
+      true
+    );
+
+    installPipIntercept();
+  }
+
+  // Кнопка PiP плеера Alloha (AllPlay — форк Plyr) вместо нативного
+  // Picture-in-Picture включает псевдо-fullscreen, как на rezka. Plyr вешает
+  // обработчик прямо на кнопку, так что capture на window срабатывает раньше,
+  // а stopImmediatePropagation не даёт ему вызвать requestPictureInPicture
+  // вовсе (проверено: с перехватом вызовов 0) — PiP-окно даже не мигает.
+  function installPipIntercept() {
+    window.addEventListener(
+      'click',
+      (e) => {
+        if (!e.target.closest || !e.target.closest('button[data-allplay="pip"]')) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        window.top.postMessage({ type: FS_MESSAGE, action: 'toggle' }, '*');
       },
       true
     );
@@ -325,6 +361,94 @@
     if (focusTimer === null) pingVideoFocus();
   }
 
+  // ==================== Псевдо-fullscreen ====================
+  //
+  // До <video> плеера отсюда не дотянуться (cross-origin), поэтому на весь
+  // viewport растягиваем сам <iframe>. Сайт пересоздаёт iframe вместе с его
+  // родителем на каждую серию, поэтому не инлайн-стили на элемент, а
+  // вставленный <style> по селектору — он подхватит и новый кадр.
+  //
+  // position: fixed здесь не ломают transform-предки (их нет), но предки
+  // .wKBD (z-index 2) и .content-block (z-index 1) — свои stacking context'ы:
+  // шапка сайта и список серий оказываются поверх плеера. Поэтому предкам с
+  // z-index на время режима ставим максимальный z-index через атрибут-маркер.
+  // .wKBD при смене серии живёт дальше, но у другой озвучки он свой — отсюда
+  // переразметка по MutationObserver.
+  const FS_STYLE_ID = 'yummyani-episode-nav-fs';
+  const FS_STACK_ATTR = 'data-yummyani-episode-nav-fs';
+  const FS_CSS = `
+    #video iframe {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      margin: 0 !important;
+      border-radius: 0 !important;
+      z-index: 2147483647 !important;
+    }
+    [${FS_STACK_ATTR}] { z-index: 2147483647 !important; }
+    html { overflow: hidden !important; }
+  `;
+  let fsObserver = null;
+
+  function fsActive() {
+    return !!document.getElementById(FS_STYLE_ID);
+  }
+
+  function markStack() {
+    const frame = playerFrame();
+    for (let el = frame && frame.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      if (el.hasAttribute(FS_STACK_ATTR)) continue;
+      if (getComputedStyle(el).zIndex !== 'auto') el.setAttribute(FS_STACK_ATTR, '');
+    }
+  }
+
+  function unmarkStack() {
+    for (const el of document.querySelectorAll(`[${FS_STACK_ATTR}]`)) el.removeAttribute(FS_STACK_ATTR);
+  }
+
+  function enterFullscreen() {
+    if (!playerFrame()) return;
+    const style = document.createElement('style');
+    style.id = FS_STYLE_ID;
+    style.textContent = FS_CSS;
+    document.head.appendChild(style);
+    markStack();
+
+    const scope = document.querySelector('#video');
+    if (scope) {
+      fsObserver = new MutationObserver(markStack);
+      fsObserver.observe(scope, { childList: true, subtree: true });
+    }
+    focusPlayer();
+  }
+
+  function exitFullscreen() {
+    const style = document.getElementById(FS_STYLE_ID);
+    if (!style) return;
+    style.remove();
+    unmarkStack();
+    if (fsObserver) fsObserver.disconnect();
+    fsObserver = null;
+  }
+
+  function toggleFullscreen() {
+    fsActive() ? exitFullscreen() : enterFullscreen();
+  }
+
+  // Сообщение принимаем только из нашего плеера — в том числе из вложенного в
+  // него фрейма (у Kodik <video> на уровень глубже).
+  function fromPlayer(source) {
+    const frame = playerFrame();
+    if (!frame || !source) return false;
+    for (let w = source, i = 0; w && i < 5; w = w.parent, i++) {
+      if (w === frame.contentWindow) return true;
+      if (w === w.parent) break;
+    }
+    return false;
+  }
+
   // 'switched'    — серия переключена
   // 'boundary'    — список найден, но это первая/последняя серия
   // 'unavailable' — списка серий на странице нет, хоткей не наш
@@ -372,6 +496,12 @@
       return;
     }
 
+    if (data.type === FS_MESSAGE) {
+      if (!fromPlayer(e.source)) return;
+      data.action === 'exit' ? exitFullscreen() : toggleFullscreen();
+      return;
+    }
+
     if (data.type !== NAV_MESSAGE) return;
     if (data.delta !== 1 && data.delta !== -1) return;
     switchEpisode(data.delta);
@@ -382,8 +512,20 @@
   document.addEventListener(
     'keydown',
     (e) => {
-      if (!e.ctrlKey || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
       if (isRealTextInput(e.target)) return;
+
+      if (e.key === 'F9') {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFullscreen();
+        return;
+      }
+      if (e.key === 'Escape' && fsActive()) {
+        exitFullscreen();
+        return;
+      }
+
+      if (!e.ctrlKey || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
 
       // preventDefault/stopPropagation обязательны: плеер ловит стрелку как
       // перемотку и ctrlKey не проверяет. Но глушим только когда список серий
