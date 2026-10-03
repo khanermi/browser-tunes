@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.3
+// @version      1.4
 // @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
@@ -37,9 +37,11 @@
 
   // В топ-документе: после клика по серии сайт пересоздаёт <iframe>, так что
   // первая просьба почти всегда уходит в ещё не загруженный документ. Шлём
-  // серией, пока плеер не подтвердит (FOCUS_ACK) или не истечёт окно.
+  // серией, пока плеер не подтвердит (FOCUS_ACK) или не истечёт окно. Окно с
+  // запасом: Alloha пересоздаёт iframe через ~2 с после клика и ещё раз через
+  // ~3 с.
   const FOCUS_PING_MS = 400;
-  const FOCUS_WINDOW_MS = 6000;
+  const FOCUS_WINDOW_MS = 10000;
 
   function isRealTextInput(el) {
     if (!el) return false;
@@ -338,15 +340,23 @@
   // долетает до плеера. Но Space надёжно работает, только когда внутри плеера
   // сфокусирован <video>, а это может сделать лишь код внутри его документа
   // (см. installVideoFocusBridge). Просим его об этом, пока не подтвердит.
+  //
+  // Подтверждение — от конкретного кадра (focusedFrame), а не «вообще»: старый
+  // кадр, который сайт ещё не снёс, отвечает focused:true сразу же, а через
+  // ~2 с его заменяют новым, и фокус вместе с удалённым <iframe> падает на
+  // body — Space тогда листает страницу. Поэтому тики идут всё окно, и как
+  // только текущий кадр не тот, что подтвердил, — фокусим и просим заново.
   let focusDeadline = 0;
   let focusTimer = null;
+  let focusedFrame = null;
 
   function pingVideoFocus() {
     focusTimer = null;
     if (Date.now() > focusDeadline || !focusIsOurs()) return;
 
     const frame = playerFrame();
-    if (frame && frame.contentWindow) {
+    if (frame && frame !== focusedFrame) {
+      if (document.activeElement !== frame) focusPlayer();
       try {
         frame.contentWindow.postMessage({ type: FOCUS_MESSAGE }, '*');
       } catch (e) {
@@ -358,6 +368,7 @@
 
   function requestVideoFocus() {
     focusDeadline = Date.now() + FOCUS_WINDOW_MS;
+    focusedFrame = null;
     if (focusTimer === null) pingVideoFocus();
   }
 
@@ -468,12 +479,10 @@
     target.click();
     pending = { el: target, at: Date.now() };
 
-    // Сразу после клика сайт пересоздаёт iframe плеера, поэтому фокусим дважды:
-    // текущий кадр и тот, что появится после перерисовки. Фокус на <video>
-    // внутри плеера ставится отдельно — сообщениями, до подтверждения.
+    // Сайт пересоздаёт iframe плеера уже после клика — новый кадр подхватывают
+    // тики requestVideoFocus, они же ставят фокус на <video> внутри.
     focusPlayer();
     requestVideoFocus();
-    setTimeout(focusPlayer, 1200);
     return 'switched';
   }
 
@@ -483,16 +492,11 @@
     const data = e.data;
     if (!data) return;
 
-    // Плеер отвечает на каждую просьбу, но замолкать можно только когда фокус
-    // реально встал: снимок с focused:false шлёт в том числе старый кадр,
-    // который сайт прямо сейчас сносит, — оборвав пинги по нему, мы бы не
-    // достучались до нового.
+    // Плеер отвечает на каждую просьбу; засчитываем только focused:true и
+    // только от текущего кадра (в том числе из вложенного в него фрейма).
+    // Пинги при этом не обрываем — см. pingVideoFocus: кадр ещё могут заменить.
     if (data.type === FOCUS_ACK) {
-      if (data.focused === true) {
-        focusDeadline = 0;
-        clearTimeout(focusTimer);
-        focusTimer = null;
-      }
+      if (data.focused === true && fromPlayer(e.source)) focusedFrame = playerFrame();
       return;
     }
 
