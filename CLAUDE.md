@@ -148,6 +148,21 @@
   заглушку «контент недоступен» (referrer не помогает). Рабочий приём —
   открыть адрес плеера во вкладке, а там встроить его же `<iframe>` в
   страницу (тот же origin → `contentDocument` доступен).
+- **Плеер CVH — матрёшка с shadow DOM** (1.5). `ru.yummyani.me/iframeCVH.html`
+  — только обёртка: в ней `<video-player>` с открытым `shadowRoot`, в нём
+  `iframe.vk-player-iframe` на `player.cdnvideohub.com` (тоже рисует всё в
+  shadow root). Домен cdnvideohub в `@match`; его referrer — `ru.yummyani.me`,
+  так что referrer-гейт проходит сам. Поиск `<video>`/`<iframe>` в мосте
+  фокуса — `deepQueryAll` с заходом в открытые shadow root, активный элемент —
+  `deepActiveElement`, а просьба фокуса шлётся и в `contentWindow` найденных
+  так iframe (iframe из shadow DOM в `window.frames` мог не попасть). Уровень
+  без своего `<video>` фокусит вложенный `<iframe>`. Мост хоткея с 1.5 на
+  `window` в capture со `stopImmediatePropagation`, цель — `composedPath()[0]`.
+  Изнутри не проверено: во вкладке автоматизации CVH на сайте висит на
+  загрузчике, а открытый отдельно `iframeCVH.html` редиректит на YouTube
+  (антихотлинк). Встроить его в страницу того же origin получается
+  (`ru.yummyani.me` → `<iframe>` с тем же адресом), cdnvideohub так —
+  нет (пустой shadow root, ждёт настроек от обёртки).
 - `ru.yummyani.me` **как самостоятельный сайт не поддержан**: это другой,
   переписанный фронтенд (Vite/react-select, никакого `#video`), где активная
   серия помечается не фоном, а отдельной цветной полоской — по вычисленным

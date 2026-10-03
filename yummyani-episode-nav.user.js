@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.4
+// @version      1.5
 // @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
@@ -9,6 +9,7 @@
 // @match        *://*.kodikres.com/*
 // @match        *://video.sibnet.ru/*
 // @match        *://alloha.yani.tv/*
+// @match        *://player.cdnvideohub.com/*
 // @run-at       document-start
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/khanermi/browser-tunes/main/yummyani-episode-nav.user.js
@@ -56,6 +57,26 @@
     return true;
   }
 
+  // Плеер CVH (ru.yummyani.me/iframeCVH.html) прячет всё в shadow DOM: там
+  // <video-player> с открытым shadowRoot, а в нём iframe
+  // player.cdnvideohub.com, у которого <video> тоже за shadow root. Обычный
+  // querySelector туда не заглядывает, поэтому ищем с заходом в открытые
+  // shadow root.
+  function deepQueryAll(root, selector, acc = []) {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.matches(selector)) acc.push(el);
+      if (el.shadowRoot) deepQueryAll(el.shadowRoot, selector, acc);
+    }
+    return acc;
+  }
+
+  // document.activeElement для элемента в shadow DOM — это его хост.
+  function deepActiveElement() {
+    let el = document.activeElement;
+    while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;
+    return el;
+  }
+
   // ==================== Фокус на <video> внутри плеера ====================
   //
   // Топ-документ умеет сфокусировать только сам элемент <iframe>, а это не то же
@@ -78,7 +99,7 @@
     // неотличимы снаружи — из топа в чужой origin не заглянуть, и отладка
     // упирается в стену. В ответе — что именно видит эта ветка.
     function report(focused) {
-      const nested = [...document.querySelectorAll('iframe')].map((f) => {
+      const nested = deepQueryAll(document, 'iframe').map((f) => {
         try {
           return new URL(f.src, location.href).hostname;
         } catch (e) {
@@ -91,7 +112,7 @@
             type: FOCUS_ACK,
             focused,
             host: location.hostname,
-            hasVideo: !!document.querySelector('video'),
+            hasVideo: deepQueryAll(document, 'video').length > 0,
             nested
           },
           '*'
@@ -103,9 +124,9 @@
 
     function focusVideo() {
       timer = null;
-      if (isRealTextInput(document.activeElement)) return;
+      if (isRealTextInput(deepActiveElement())) return;
 
-      const video = document.querySelector('video');
+      const video = deepQueryAll(document, 'video')[0];
       if (video) {
         // <video> без controls штатно не фокусируется вовсе; -1 (а не 0), чтобы
         // не менять порядок обхода табом внутри плеера.
@@ -115,9 +136,21 @@
         } catch (e) {
           /* не критично: фокус останется на самом <iframe>, как было до 1.1 */
         }
-        if (document.activeElement === video) {
+        if (deepActiveElement() === video) {
           report(true);
           return;
+        }
+      } else {
+        // <video> уровнем ниже (Kodik, CVH) — фокус должен стоять на самом
+        // вложенном <iframe>, иначе нажатия до него не долетят. На <video>
+        // внутри него фокус поставит уже та ветка.
+        const inner = deepQueryAll(document, 'iframe')[0];
+        if (inner && deepActiveElement() !== inner) {
+          try {
+            inner.focus({ preventScroll: true });
+          } catch (e) {
+            /* не критично */
+          }
         }
       }
 
@@ -136,10 +169,14 @@
       // Если плеер вложил ещё один iframe, <video> лежит там — просто
       // пробрасываем просьбу на уровень глубже; ответит тот уровень, где
       // видео действительно есть. Сообщение идёт только вниз, так что
-      // зациклиться не может.
-      for (let i = 0; i < window.frames.length; i++) {
+      // зациклиться не может. iframe внутри shadow DOM (CVH) в window.frames
+      // может не попасть — их contentWindow добавляем явно.
+      const targets = new Set();
+      for (let i = 0; i < window.frames.length; i++) targets.add(window.frames[i]);
+      for (const f of deepQueryAll(document, 'iframe')) if (f.contentWindow) targets.add(f.contentWindow);
+      for (const w of targets) {
         try {
-          window.frames[i].postMessage({ type: FOCUS_MESSAGE }, '*');
+          w.postMessage({ type: FOCUS_MESSAGE }, '*');
         } catch (err) {
           /* чужой фрейм закрыт/недоступен — не наша забота */
         }
@@ -161,17 +198,20 @@
     if (keyBridgeInstalled) return;
     keyBridgeInstalled = true;
 
-    document.addEventListener(
+    // window + capture — раньше любых обработчиков плеера (тот может слушать
+    // тоже в capture на window). Цель берём из composedPath: у CVH поля ввода
+    // и <video> за shadow root, а e.target — уже их хост.
+    window.addEventListener(
       'keydown',
       (e) => {
-        if (isRealTextInput(e.target)) return;
+        if (isRealTextInput(e.composedPath()[0])) return;
 
         // Псевдо-fullscreen делает верхний документ (растягивает сам <iframe>
         // плеера) — отсюда только просим. Esc не глушим: плееру он может быть
         // нужен самому.
         if (e.key === 'F9') {
           e.preventDefault();
-          e.stopPropagation();
+          e.stopImmediatePropagation();
           window.top.postMessage({ type: FS_MESSAGE, action: 'toggle' }, '*');
           return;
         }
@@ -182,7 +222,7 @@
 
         if (!e.ctrlKey || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         window.top.postMessage(
           { type: NAV_MESSAGE, delta: e.key === 'ArrowRight' ? 1 : -1 },
           '*'
