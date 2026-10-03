@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.5
+// @version      1.6
 // @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
@@ -386,9 +386,22 @@
   // ~2 с его заменяют новым, и фокус вместе с удалённым <iframe> падает на
   // body — Space тогда листает страницу. Поэтому тики идут всё окно, и как
   // только текущий кадр не тот, что подтвердил, — фокусим и просим заново.
+  //
+  // Плеер CVH (VK Video внутри) сам новую серию не запускает, а хоткеи у него
+  // работают только в состоянии «играет»/«пауза»: на незапущенной серии он
+  // стрелки и Space игнорирует, и браузер отдаёт их прокрутке — она
+  // всплывает из iframe и листает страницу. Поэтому для CVH в том же цикле
+  // шлём обёртке её штатную команду {method: 'play'} (её же API принимает
+  // seek/pause/volume), пока текущий кадр не ответит player_video_started /
+  // player_play — тоже с привязкой к кадру (startedFrame).
   let focusDeadline = 0;
   let focusTimer = null;
   let focusedFrame = null;
+  let startedFrame = null;
+
+  function isCvhFrame(frame) {
+    return /\/iframeCVH\.html/.test(frame.src || '');
+  }
 
   function pingVideoFocus() {
     focusTimer = null;
@@ -403,12 +416,20 @@
         /* фрейм ещё пересоздаётся — повторим на следующем тике */
       }
     }
+    if (frame && frame !== startedFrame && isCvhFrame(frame)) {
+      try {
+        frame.contentWindow.postMessage({ method: 'play' }, '*');
+      } catch (e) {
+        /* то же */
+      }
+    }
     focusTimer = setTimeout(pingVideoFocus, FOCUS_PING_MS);
   }
 
   function requestVideoFocus() {
     focusDeadline = Date.now() + FOCUS_WINDOW_MS;
     focusedFrame = null;
+    startedFrame = null;
     if (focusTimer === null) pingVideoFocus();
   }
 
@@ -537,6 +558,13 @@
     // Пинги при этом не обрываем — см. pingVideoFocus: кадр ещё могут заменить.
     if (data.type === FOCUS_ACK) {
       if (data.focused === true && fromPlayer(e.source)) focusedFrame = playerFrame();
+      return;
+    }
+
+    // Обёртка CVH сообщает о старте воспроизведения — автозапуск можно
+    // прекращать (см. pingVideoFocus).
+    if (data.key === 'player_video_started' || data.key === 'player_play') {
+      if (fromPlayer(e.source)) startedFrame = playerFrame();
       return;
     }
 
