@@ -223,6 +223,17 @@
   живой странице: клик по соседнему `li` переключает серию и пересоздаёт
   iframe, `sly('toCenter')` работает, meta referrer нет (гейт по referrer
   внутри плеера видит `animejoy.ru`).
+- **AllVideo: `fsst.online/embed/N/` редиректит на `incvideo1.online/embed/N/`**
+  (1.6). В `@match` был только `fsst.online` — скрипт внутри плеера не
+  запускался, и Ctrl+стрелки доставались Playerjs как перемотка. Конечный
+  домен с цифрой, поэтому он задан `@include` регэкспом `incvideo\d*.online`
+  (у `@match` нет масок в середине имени). Referrer после редиректа остаётся
+  сайтом, гейт проходит. Playerjs там — `window.player`, а не `window.playerjs`
+  (`PLAYERJS_GLOBALS`). Проверено: скрипт, загруженный в same-origin iframe
+  страницы плеера, ставит фокус на `<video>` и пробрасывает Ctrl+→ наверх, плеер
+  нажатия не видит. **Вывод на будущее: домен плеера брать из конечного URL
+  фрейма (открыть embed во вкладке и посмотреть `location.href`), а не из
+  `src` iframe.**
 
 - **Список серий — обычный DOM без хэшей**: плейлист грузится аяксом
   (`/engine/ajax/playlists.php`, логика в `templates/AnimeJoy/playlists/player.js`),
@@ -238,7 +249,7 @@
   страницы), иначе выбранная серия может уехать за край ленты.
 - Плеер — `.playlists-iframe iframe`, сайт пересоздаёт его на каждый клик.
   Домены плееров в `@match` (сужены до embed-путей, где возможно):
-  `animejoya.ru/player` ("Наш плеер", Playerjs), `fsst.online` (AllVideo),
+  `animejoya.ru/player` ("Наш плеер", Playerjs), `fsst.online` → `incvideo1.online` (AllVideo),
   `video.sibnet.ru`, `kodikplayer.com` + `*.kodikres.com`, `vkvideo.ru`,
   `dzen.ru/embed`, `matreshka.tv/embed`, `ok.ru/videoembed`,
   `my.mail.ru/video/embed`, `ebd.cda.pl`. Хоткей внутри фрейма ловится на
