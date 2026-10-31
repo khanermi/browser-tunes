@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.5
+// @version      1.6
 // @description  Ctrl+Left/Right — переключение серии на ajsubs.ru и animejoy.ru (AnimeJoy). F9 — псевдо-fullscreen плеера (Esc — выход), кнопка полного экрана плеера Mail включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://ajsubs.ru/*
 // @match        *://animejoy.ru/*
 // @match        *://*.animejoy.ru/*
 // @match        *://animejoya.ru/player/*
 // @match        *://fsst.online/embed/*
+// @include      /^https?:\/\/incvideo\d*\.online\/embed\//
 // @match        *://video.sibnet.ru/shell.php*
 // @match        *://kodikplayer.com/*
 // @match        *://*.kodikres.com/*
@@ -298,16 +299,22 @@
   // нажатие проигнорировал — переключаем play/pause сами. Если плеер Space
   // обработал (мышь над ним), состояние уже другое, и мы ничего не делаем.
   //
-  // У Playerjs переключаем через его API (window.playerjs — так его называет
-  // сама страница animejoya.ru/player/playerjs.html; @grant none → мы в
-  // контексте страницы): до первого запуска src у <video> ещё не выставлен,
+  // У Playerjs переключаем через его API (window.playerjs / window.player —
+  // см. PLAYERJS_GLOBALS; @grant none → мы в контексте страницы): до первого запуска src у <video> ещё не выставлен,
   // и голый video.play() падает с AbortError. Для остальных плееров —
   // напрямую через <video>.
   const SPACE_CHECK_MS = 150;
 
+  // Имя переменной задаёт страница плеера: `playerjs` у "Наш плеер"
+  // (animejoya.ru), `player` у AllVideo (fsst.online → incvideo1.online).
+  const PLAYERJS_GLOBALS = ['playerjs', 'player'];
+
   function playerjsApi() {
-    const p = window.playerjs;
-    return p && typeof p.api === 'function' ? p : null;
+    for (const name of PLAYERJS_GLOBALS) {
+      const p = window[name];
+      if (p && typeof p.api === 'function') return p;
+    }
+    return null;
   }
 
   function isPlaying(video) {
