@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.4
-// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru (AnimeJoy). F9 — псевдо-fullscreen плеера (Esc — выход), кнопка полного экрана плеера Mail включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// @version      1.5
+// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru и animejoy.ru (AnimeJoy). F9 — псевдо-fullscreen плеера (Esc — выход), кнопка полного экрана плеера Mail включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://ajsubs.ru/*
+// @match        *://animejoy.ru/*
+// @match        *://*.animejoy.ru/*
 // @match        *://animejoya.ru/player/*
 // @match        *://fsst.online/embed/*
 // @match        *://video.sibnet.ru/shell.php*
@@ -28,7 +30,8 @@
   const FOCUS_MESSAGE = 'ajsubs-episode-nav-focus-video';
   const FOCUS_ACK = 'ajsubs-episode-nav-video-focused';
   const FS_MESSAGE = 'ajsubs-episode-nav-fullscreen';
-  const SITE_HOST = /(^|\.)ajsubs\.ru$/;
+  // Один и тот же движок AnimeJoy (DLE-шаблон, плейлист, плееры) на двух доменах.
+  const SITE_HOST = /(^|\.)(ajsubs|animejoy)\.ru$/;
 
   // Внутри плеера: серия грузится асинхронно, <video> появляется в документе
   // позже, чем прилетает просьба его сфокусировать — поэтому опрашиваем.

@@ -209,12 +209,20 @@
   `1.1` и не увидел бы апдейт с тем же номером.
 
 ### `ajsubs-episode-nav.user.js`
-Сайт: `ajsubs.ru` (AnimeJoy). `Ctrl+←/→` — переключение серии текущей
+Сайты: `ajsubs.ru` и `animejoy.ru` (AnimeJoy). `Ctrl+←/→` — переключение серии текущей
 озвучки/плеера, фокус после переключения — на `<video>` внутри плеера. `F9` —
 псевдо-fullscreen любого плеера (`Esc` — выход), с 1.4. Мост
 фокуса и хоткея из iframe — та же схема, что в `yummyani-episode-nav`
-(`postMessage` наверх, referrer-гейт по `ajsubs.ru`, просьба сфокусировать
-`<video>` серией пингов до подтверждения).
+(`postMessage` наверх, referrer-гейт по `ajsubs.ru`/`animejoy.ru`, просьба
+сфокусировать `<video>` серией пингов до подтверждения).
+
+- **`animejoy.ru` — тот же движок, что `ajsubs.ru`** (1.5): тот же
+  `.playlists-videos li.visible/.active`, `.playlists-iframe iframe`, jQuery +
+  Sly и те же плееры (AllVideo = `fsst.online`, Sibnet). Поэтому это не
+  отдельный скрипт, а ещё один `@match` и домен в `SITE_HOST`. Проверено на
+  живой странице: клик по соседнему `li` переключает серию и пересоздаёт
+  iframe, `sly('toCenter')` работает, meta referrer нет (гейт по referrer
+  внутри плеера видит `animejoy.ru`).
 
 - **Список серий — обычный DOM без хэшей**: плейлист грузится аяксом
   (`/engine/ajax/playlists.php`, логика в `templates/AnimeJoy/playlists/player.js`),
