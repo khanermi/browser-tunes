@@ -1,23 +1,16 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.6
-// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru и animejoy.ru (AnimeJoy). F9 — псевдо-fullscreen плеера (Esc — выход), кнопка полного экрана плеера Mail включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
-// @match        *://ajsubs.ru/*
-// @match        *://animejoy.ru/*
-// @match        *://*.animejoy.ru/*
-// @match        *://animejoya.ru/player/*
-// @match        *://fsst.online/embed/*
-// @include      /^https?:\/\/incvideo\d*\.online\/embed\//
-// @match        *://video.sibnet.ru/shell.php*
-// @match        *://kodikplayer.com/*
-// @match        *://*.kodikres.com/*
-// @match        *://vkvideo.ru/video_ext.php*
-// @match        *://dzen.ru/embed/*
-// @match        *://matreshka.tv/embed/*
-// @match        *://ok.ru/videoembed/*
-// @match        *://my.mail.ru/video/embed/*
-// @match        *://ebd.cda.pl/*
+// @version      1.7
+// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru и animejoy.ru (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// Плееры живут на своих доменах, а у Alloha домен случайный и меняется
+// (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
+// а сразу за шапкой кода гейтится: верхний документ — только ajsubs/animejoy,
+// iframe — только встроенный ими (referrer) или получивший наше сообщение.
+// Известные домены плееров: animejoya.ru/player, fsst.online → incvideo1.online,
+// video.sibnet.ru, kodikplayer.com + *.kodikres.com, vkvideo.ru, dzen.ru,
+// matreshka.tv, ok.ru, my.mail.ru, ebd.cda.pl, Alloha (AllPlay).
+// @match        *://*/*
 // @run-at       document-start
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/khanermi/browser-tunes/main/ajsubs-episode-nav.user.js
@@ -31,6 +24,9 @@
   const FOCUS_MESSAGE = 'ajsubs-episode-nav-focus-video';
   const FOCUS_ACK = 'ajsubs-episode-nav-video-focused';
   const FS_MESSAGE = 'ajsubs-episode-nav-fullscreen';
+  // Топ → плеер: "переключи серию сам" — когда списка серий на сайте нет
+  // (у Alloha один пункт на весь сезон, серии внутри плеера).
+  const PLAYER_NAV_MESSAGE = 'ajsubs-episode-nav-player-nav';
   // Один и тот же движок AnimeJoy (DLE-шаблон, плейлист, плееры) на двух доменах.
   const SITE_HOST = /(^|\.)(ajsubs|animejoy)\.ru$/;
 
@@ -177,7 +173,62 @@
 
     installHoverArming();
     installSpaceFallback();
+    installAllplay();
     if (location.hostname === 'my.mail.ru') installMailFullscreenIntercept();
+  }
+
+  // Alloha — плеер AllPlay (форк Plyr: классы allplay__*, кнопки
+  // [data-allplay=...]). На animejoy у него в плейлисте один пункт на весь
+  // сезон, а серии переключаются внутри плеера его кнопками ‹ › (документ
+  // не перезагружается, но <video> пересоздаётся и фокус падает на body) —
+  // их и жмём по просьбе сверху. Домен у плеера случайный, поэтому узнаём
+  // его по DOM, а не по hostname. Родные хоткеи AllPlay (Space, ←/→
+  // перемотка 10 с, ↑/↓ громкость, F, M) работают при любом фокусе внутри
+  // документа плеера, в том числе на body, — их не трогаем; Ctrl+стрелки он
+  // игнорирует. Второй <video> в документе — рекламный (rmp-ad), он после
+  // основного, так что querySelector('video') берёт нужный.
+  function isAllplay() {
+    return !!document.querySelector('.allplay');
+  }
+
+  function installAllplay() {
+    window.addEventListener('message', (e) => {
+      const data = e.data;
+      if (!data || data.type !== PLAYER_NAV_MESSAGE) return;
+      if (e.source !== window.parent) return;
+      if (data.delta !== 1 && data.delta !== -1) return;
+
+      const btn = document.querySelector(
+        `button[data-allplay="${data.delta === 1 ? 'next' : 'prev'}"]`
+      );
+      if (btn) {
+        if (!btn.disabled) btn.click();
+        return;
+      }
+
+      // Своих кнопок нет — может, плеер уровнем ниже.
+      for (let i = 0; i < window.frames.length; i++) {
+        try {
+          window.frames[i].postMessage(data, '*');
+        } catch (err) {
+          /* чужой фрейм закрыт/недоступен */
+        }
+      }
+    });
+
+    // Кнопка PiP → псевдо-fullscreen, как на yummyani: обработчик висит на
+    // самой кнопке, capture на window срабатывает раньше, и
+    // requestPictureInPicture не вызывается вовсе.
+    window.addEventListener(
+      'click',
+      (e) => {
+        if (!e.target.closest || !e.target.closest('button[data-allplay="pip"]')) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        window.top.postMessage({ type: FS_MESSAGE, action: 'toggle' }, '*');
+      },
+      true
+    );
   }
 
   // Родной полный экран плеера Mail внутри ajsubs не включается: плеер зовёт
@@ -259,7 +310,10 @@
     c.el.dispatchEvent(new MouseEvent('mouseup', init));
   }
 
+  // AllPlay (Alloha) хоткеи пускает без мыши, а синтетическое наведение ему
+  // только показывает панель управления на каждое нажатие — не шлём.
   function armPlayer() {
+    if (isAllplay()) return;
     armPlayerHover();
     armPlayerClick();
   }
@@ -270,7 +324,7 @@
       (e) => {
         if (e.ctrlKey || e.altKey || e.metaKey) return;
         if (isRealTextInput(e.target)) return;
-        if (!document.querySelector('video')) return;
+        if (!document.querySelector('video') || isAllplay()) return;
         armPlayerHover();
       },
       true
@@ -384,6 +438,10 @@
     if (SITE_HOST.test(embedder)) installKeyBridge();
     return;
   }
+
+  // @match стоит на все сайты (ради плеера с плавающим доменом) — верхний
+  // документ трогаем только на самих ajsubs/animejoy.
+  if (!SITE_HOST.test(location.hostname)) return;
 
   // ==================== Список серий ====================
   //
@@ -531,6 +589,29 @@
     return 'switched';
   }
 
+  // Списка серий на сайте нет (Alloha: один пункт на сезон) — просим плеер
+  // переключить серию своими кнопками. false — плеера нет, хоткей не наш.
+  function switchEpisodeInPlayer(delta) {
+    const frame = playerFrame();
+    if (!frame || !frame.contentWindow) return false;
+    try {
+      frame.contentWindow.postMessage({ type: PLAYER_NAV_MESSAGE, delta }, '*');
+    } catch (e) {
+      return false;
+    }
+    // Нажали на странице — переносим фокус в плеер, чтобы Space/стрелки дальше
+    // шли ему. Если нажали в самом плеере, фокус там и так.
+    focusPlayer();
+    requestVideoFocus();
+    return true;
+  }
+
+  function navigate(delta) {
+    const result = switchEpisode(delta);
+    if (result !== 'unavailable') return true;
+    return switchEpisodeInPlayer(delta);
+  }
+
   window.addEventListener('message', (e) => {
     const data = e.data;
     if (!data) return;
@@ -552,7 +633,7 @@
 
     if (data.type !== NAV_MESSAGE) return;
     if (data.delta !== 1 && data.delta !== -1) return;
-    switchEpisode(data.delta);
+    navigate(data.delta);
   });
 
   // ==================== Хоткеи ====================
@@ -574,7 +655,7 @@
       }
 
       if (!isNavKey(e)) return;
-      if (switchEpisode(e.key === 'ArrowRight' ? 1 : -1) !== 'unavailable') {
+      if (navigate(e.key === 'ArrowRight' ? 1 : -1)) {
         e.preventDefault();
         e.stopPropagation();
       }

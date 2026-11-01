@@ -210,7 +210,7 @@
 
 ### `ajsubs-episode-nav.user.js`
 Сайты: `ajsubs.ru` и `animejoy.ru` (AnimeJoy). `Ctrl+←/→` — переключение серии текущей
-озвучки/плеера, фокус после переключения — на `<video>` внутри плеера. `F9` —
+озвучки/плеера (у Alloha — кнопками самого плеера, с 1.7), фокус после переключения — на `<video>` внутри плеера. `F9` —
 псевдо-fullscreen любого плеера (`Esc` — выход), с 1.4. Мост
 фокуса и хоткея из iframe — та же схема, что в `yummyani-episode-nav`
 (`postMessage` наверх, referrer-гейт по `ajsubs.ru`/`animejoy.ru`, просьба
@@ -248,16 +248,49 @@
   сайтовый `jQuery(...).sly('toCenter', li)` (`@grant none` → код в контексте
   страницы), иначе выбранная серия может уехать за край ленты.
 - Плеер — `.playlists-iframe iframe`, сайт пересоздаёт его на каждый клик.
-  Домены плееров в `@match` (сужены до embed-путей, где возможно):
-  `animejoya.ru/player` ("Наш плеер", Playerjs), `fsst.online` → `incvideo1.online` (AllVideo),
-  `video.sibnet.ru`, `kodikplayer.com` + `*.kodikres.com`, `vkvideo.ru`,
-  `dzen.ru/embed`, `matreshka.tv/embed`, `ok.ru/videoembed`,
-  `my.mail.ru/video/embed`, `ebd.cda.pl`. Хоткей внутри фрейма ловится на
+  С 1.7 **`@match *://*/*`** (раньше был список доменов плееров): у Alloha
+  домен случайный (см. ниже). Поэтому гейт в коде: верхний документ работает
+  только на `SITE_HOST`, в iframe хоткей включается по referrer
+  `ajsubs`/`animejoy` или по нашему же `FOCUS_MESSAGE` сверху (вложенный
+  kodikres), на чужих сайтах остаётся только молчащий слушатель `message`.
+  Известные плееры: `animejoya.ru/player` ("Наш плеер", Playerjs),
+  `fsst.online` → `incvideo1.online` (AllVideo), `video.sibnet.ru`,
+  `kodikplayer.com` + `*.kodikres.com`, `vkvideo.ru`, `dzen.ru/embed`,
+  `matreshka.tv/embed`, `ok.ru/videoembed`, `my.mail.ru/video/embed`,
+  `ebd.cda.pl`, Alloha. Хоткей внутри фрейма ловится на
   `window` в capture с `stopImmediatePropagation` — голые стрелки у Playerjs
   это перемотка, Ctrl он не проверяет.
-- **Kodik не поддержан**: в плейлисте у него один пункт `~` (сериал целиком,
-  серии переключаются внутри самого плеера). Меньше двух видимых пунктов —
-  скрипт считает, что списка нет, и хоткей не трогает.
+- **Alloha на animejoy (1.7) — плеер AllPlay на случайном домене**
+  (`politician-as.stravers.live` на 2026-11, путь `/` с токенами в query;
+  домен, очевидно, ротируется — отсюда `@match *://*/*`). Узнаём его по DOM
+  (`.allplay`), не по hostname. В плейлисте сайта у него **один пункт на
+  весь сезон**, серии — внутри плеера (выпадашка «Серия N» и кнопки
+  `button[data-allplay="prev|next"]`). Поэтому `navigate()` в топе: если
+  `switchEpisode` вернул `unavailable` (меньше двух пунктов) — шлёт в плеер
+  `PLAYER_NAV_MESSAGE`, плеер жмёт свою кнопку (принимает только от
+  `window.parent`; без кнопок — пересылает во вложенные фреймы), топ
+  переносит фокус в iframe. Ctrl+←/→, нажатый внутри плеера, идёт тем же
+  путём: наверх `NAV_MESSAGE` → `unavailable` → вниз `PLAYER_NAV_MESSAGE`.
+  Проверено на живом плеере (встроенном в страницу его же домена, referrer
+  подменён): Ctrl+→/← листает 1→2→3→2, плеер не перематывает; F9 и кнопка
+  PiP уходят наверх `FS_MESSAGE`, `pictureInPictureElement` остаётся `null`.
+  - Серия меняется без перезагрузки документа, но **`<video>`
+    пересоздаётся**, фокус падает на body. Не страшно: родные хоткеи AllPlay
+    (Space, ←/→ ±10 с, ↑/↓ громкость, F, M) работают при любом фокусе внутри
+    документа плеера, включая body, и без наведения мыши — синтетическое
+    наведение/«клик» для Playerjs (`armPlayer`) на AllPlay отключены
+    (`isAllplay()`). Space AllPlay переключает синхронно, так что
+    `installSpaceFallback` не срабатывает дважды.
+  - В документе два `<video>`: основной `video.allplay__video` и рекламный
+    `rmp-ad-vast-video-player` (после основного) — `querySelector('video')`
+    берёт нужный.
+  - Громкость/mute AllPlay хранит в `localStorage.allplay` своего домена —
+    после отладки во вкладке автоматизации вернуть (профиль Chrome общий).
+  - На animejoy поверх плеера модалка «Вам есть 18?» (`#modal`, без
+    регистрации); для отладки её можно скрыть стилем, не нажимая «ДА».
+  - Отладка: `fetch` скрипта с `127.0.0.1` со страницы плеера виснет
+    (Local Network Access Chrome) — код вставлять в `javascript_tool`
+    напрямую (функция → `toString()` → `eval` в окне фрейма).
 - **Фокус на `<video>` для Playerjs недостаточен — Space он всё равно
   игнорирует.** Его keydown-обработчик сначала сверяет глобальный флаг
   «активный плеер» (в обфусцированном коде `1B.fR==v.id`) плюс состояние
