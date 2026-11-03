@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.7
-// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru и animejoy.ru (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// @version      1.8
+// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // Плееры живут на своих доменах, а у Alloha домен случайный и меняется
 // (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
-// а сразу за шапкой кода гейтится: верхний документ — только ajsubs/animejoy,
+// а сразу за шапкой кода гейтится: верхний документ — только ajsubs/animejoy/otakujoy,
 // iframe — только встроенный ими (referrer) или получивший наше сообщение.
 // Известные домены плееров: animejoya.ru/player, fsst.online → incvideo1.online,
 // video.sibnet.ru, kodikplayer.com + *.kodikres.com, vkvideo.ru, dzen.ru,
@@ -27,8 +27,8 @@
   // Топ → плеер: "переключи серию сам" — когда списка серий на сайте нет
   // (у Alloha один пункт на весь сезон, серии внутри плеера).
   const PLAYER_NAV_MESSAGE = 'ajsubs-episode-nav-player-nav';
-  // Один и тот же движок AnimeJoy (DLE-шаблон, плейлист, плееры) на двух доменах.
-  const SITE_HOST = /(^|\.)(ajsubs|animejoy)\.ru$/;
+  // Один и тот же движок AnimeJoy (DLE-шаблон, плейлист, плееры) на нескольких доменах (otakujoy.fun — зеркало animejoy с 1.8).
+  const SITE_HOST = /(^|\.)((ajsubs|animejoy)\.ru|otakujoy\.fun)$/;
 
   // Внутри плеера: серия грузится асинхронно, <video> появляется в документе
   // позже, чем прилетает просьба его сфокусировать — поэтому опрашиваем.
@@ -440,7 +440,7 @@
   }
 
   // @match стоит на все сайты (ради плеера с плавающим доменом) — верхний
-  // документ трогаем только на самих ajsubs/animejoy.
+  // документ трогаем только на самих ajsubs/animejoy/otakujoy.
   if (!SITE_HOST.test(location.hostname)) return;
 
   // ==================== Список серий ====================

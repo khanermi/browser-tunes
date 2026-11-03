@@ -209,11 +209,11 @@
   `1.1` и не увидел бы апдейт с тем же номером.
 
 ### `ajsubs-episode-nav.user.js`
-Сайты: `ajsubs.ru` и `animejoy.ru` (AnimeJoy). `Ctrl+←/→` — переключение серии текущей
+Сайты: `ajsubs.ru`, `animejoy.ru` и его зеркало `otakujoy.fun` (AnimeJoy). `Ctrl+←/→` — переключение серии текущей
 озвучки/плеера (у Alloha — кнопками самого плеера, с 1.7), фокус после переключения — на `<video>` внутри плеера. `F9` —
 псевдо-fullscreen любого плеера (`Esc` — выход), с 1.4. Мост
 фокуса и хоткея из iframe — та же схема, что в `yummyani-episode-nav`
-(`postMessage` наверх, referrer-гейт по `ajsubs.ru`/`animejoy.ru`, просьба
+(`postMessage` наверх, referrer-гейт по `ajsubs.ru`/`animejoy.ru`/`otakujoy.fun`, просьба
 сфокусировать `<video>` серией пингов до подтверждения).
 
 - **`animejoy.ru` — тот же движок, что `ajsubs.ru`** (1.5): тот же
@@ -223,6 +223,10 @@
   живой странице: клик по соседнему `li` переключает серию и пересоздаёт
   iframe, `sly('toCenter')` работает, meta referrer нет (гейт по referrer
   внутри плеера видит `animejoy.ru`).
+- **`otakujoy.fun` — новое зеркало animejoy** (1.8): та же разметка
+  (`templates/AnimeJoy`, плееры на `animejoya.ru`), поэтому только домен в
+  `SITE_HOST` (`@match` и так `*://*/*`). `animejoy.ru` на 2026-11 ещё
+  отвечает — оставлен. Проверено только curl'ом главной, не в браузере.
 - **AllVideo: `fsst.online/embed/N/` редиректит на `incvideo1.online/embed/N/`**
   (1.6). В `@match` был только `fsst.online` — скрипт внутри плеера не
   запускался, и Ctrl+стрелки доставались Playerjs как перемотка. Конечный
