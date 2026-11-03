@@ -46,7 +46,7 @@ DOM, проверенные на живой странице. Не выводи 
 
 | Плеер (как опознать) | Тюн | Где сделан | Где ещё встречается, но тюна нет |
 |---|---|---|---|
-| Alloha / AllPlay (`.allplay`, домен ротируется, напр. `*.stravers.live`) | **Чистка субтитров от остатков ASS**: реплики-маски `m 20 73 l …` → `removeCue`, теги `{…}` вырезать; на `load` у `<track>` (capture на `document`) + разовый проход | `ajsubs-episode-nav` 1.9 (`installAssCueCleaner`, исходник), копии в `yummyani-episode-nav` 1.8 и `kinogo-allplay-episode-nav` 1.4 — правишь одну, правь все | — |
+| Alloha / AllPlay (`.allplay`, домен ротируется, напр. `*.stravers.live`) | **Чистка субтитров от остатков ASS**: реплики-маски `m 20 73 l …` → `removeCue`, теги `{…}` вырезать, дубли-слои (тот же текст и start/end ±2 мс) — оставить один; на `load` у `<track>` (capture на `document`) + разовый проход | `ajsubs-episode-nav` 1.9/1.11 (`installAssCueCleaner`, исходник), копии в `yummyani-episode-nav` 1.8/1.10 и `kinogo-allplay-episode-nav` 1.4/1.6 — правишь одну, правь все | — |
 | Alloha / AllPlay | Ctrl+←/→ — его кнопками `button[data-allplay="prev\|next"]`, если на сайте один пункт на сезон | ajsubs 1.7, kinogo | — |
 | Alloha / AllPlay | PiP `button[data-allplay="pip"]` → псевдо-fullscreen (click в capture на `window`) | yummyani, ajsubs 1.7 | — |
 | Alloha / AllPlay | **Размер субтитров Shift+↑/↓** — `.click()` по скрытым `[id$="-fontSize"] button[role=menuitemradio]`, подсказка «Субтитры N%», с топа — сообщением | `ajsubs-episode-nav` 1.10 (`installCaptionSizeKeys`, исходник), копии в `yummyani-episode-nav` 1.9 и `kinogo-allplay-episode-nav` 1.5 — правишь одну, правь все | — |
@@ -96,6 +96,7 @@ Cross-origin iframe из страницы сайта не прочитать. Р
 | Фокус правильный, хоткеи плеера молчат | плеер слушает только «мышь над плеером»/«был клик» (Playerjs) или только состояние «играет» (VK в CVH) | найти keydown-обработчик плеера, какие флаги он проверяет |
 | Псевдо-fullscreen под шапкой сайта | предки с `z-index` создают stacking context | пройти предков iframe, `getComputedStyle(...).zIndex` |
 | Родной fullscreen не работает | плеер зовёт `requestFullscreen` не там (Mail) | перехват кнопки в capture → псевдо-fullscreen |
+| Одна и та же реплика столбиком 2–4 раза | слои ASS-надписи стали одинаковыми репликами | `cue.startTime/endTime/text` у соседних реплик; дедуп в том же чистильщике |
 | В субтитрах цифры `m 20 73 l …`, `{=4}` и т.п. | `.vtt` криво сконвертирован из ASS (маски `\p1`, огрызки тегов) | `cue.text` у `video.textTracks`; готовый чистильщик — таблица «Тюны плеера» выше |
 
 ### 5. Реализация — устоявшиеся правила

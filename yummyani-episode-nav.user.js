@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.9
+// @version      1.10
 // @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. У Alloha вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}), Shift+↑/↓ — размер субтитров Alloha. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
@@ -333,6 +333,10 @@
   // ajsubs-episode-nav (installAssCueCleaner, 1.9) — факты там и в CLAUDE.md.
   const ASS_DRAWING = /^\s*m\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?(\s+[mnlbspc]?\s*-?\d+(\.\d+)?)+\s*$/i;
 
+  // Слои одной надписи совпадают по времени до мс; куски анимированной
+  // надписи идут через 40 мс — их порог отсекать не должен.
+  const CUE_DUP_EPS = 0.002; // с
+
   function cleanAssCues(track) {
     if (!track || !track.cues) return;
     for (const cue of Array.from(track.cues)) {
@@ -346,6 +350,21 @@
         .replace(/\\[Nn]/g, '\n')
         .replace(/\\h/g, ' ');
       if (text !== cue.text) cue.text = text;
+    }
+    // Дубли: ASS рисует надпись несколькими слоями (тень/обводка/заливка) с
+    // одним текстом и временем, конвертер теги срезал — в .vtt остаются N
+    // одинаковых реплик, и AllPlay рисует их столбиком (Братство, 2-я серия,
+    // 02:55 — 4 × «День, когда всё началось»). Оставляем одну. Тот же текст
+    // в другое время (повтор фразы, надпись, нарезанная по 40 мс) не трогаем.
+    // cues отсортированы по startTime, поэтому сравниваем со скользящим окном.
+    const recent = [];
+    for (const cue of Array.from(track.cues)) {
+      while (recent.length && cue.startTime - recent[0].startTime > CUE_DUP_EPS) recent.shift();
+      const dup = recent.some(
+        (c) => c.text === cue.text && Math.abs(c.endTime - cue.endTime) <= CUE_DUP_EPS
+      );
+      if (dup) track.removeCue(cue);
+      else recent.push(cue);
     }
   }
 

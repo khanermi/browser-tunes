@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.10
+// @version      1.11
 // @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}), Shift+↑/↓ — размер субтитров Alloha. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // Плееры живут на своих доменах, а у Alloha домен случайный и меняется
 // (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
@@ -279,6 +279,10 @@
   // <track> (не всплывает и до window не доходит → capture на document).
   const ASS_DRAWING = /^\s*m\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?(\s+[mnlbspc]?\s*-?\d+(\.\d+)?)+\s*$/i;
 
+  // Слои одной надписи совпадают по времени до мс; куски анимированной
+  // надписи идут через 40 мс — их порог отсекать не должен.
+  const CUE_DUP_EPS = 0.002; // с
+
   function cleanAssCues(track) {
     if (!track || !track.cues) return;
     for (const cue of Array.from(track.cues)) {
@@ -292,6 +296,21 @@
         .replace(/\\[Nn]/g, '\n')
         .replace(/\\h/g, ' ');
       if (text !== cue.text) cue.text = text;
+    }
+    // Дубли: ASS рисует надпись несколькими слоями (тень/обводка/заливка) с
+    // одним текстом и временем, конвертер теги срезал — в .vtt остаются N
+    // одинаковых реплик, и AllPlay рисует их столбиком (Братство, 2-я серия,
+    // 02:55 — 4 × «День, когда всё началось»). Оставляем одну. Тот же текст
+    // в другое время (повтор фразы, надпись, нарезанная по 40 мс) не трогаем.
+    // cues отсортированы по startTime, поэтому сравниваем со скользящим окном.
+    const recent = [];
+    for (const cue of Array.from(track.cues)) {
+      while (recent.length && cue.startTime - recent[0].startTime > CUE_DUP_EPS) recent.shift();
+      const dup = recent.some(
+        (c) => c.text === cue.text && Math.abs(c.endTime - cue.endTime) <= CUE_DUP_EPS
+      );
+      if (dup) track.removeCue(cue);
+      else recent.push(cue);
     }
   }
 
