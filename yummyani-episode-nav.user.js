@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.11
+// @version      1.12
 // @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. У Alloha вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
@@ -333,8 +333,8 @@
   // ajsubs-episode-nav (installAssCueCleaner, 1.9) — факты там и в CLAUDE.md.
   const ASS_DRAWING = /^\s*m\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?(\s+[mnlbspc]?\s*-?\d+(\.\d+)?)+\s*$/i;
 
-  // Слои одной надписи совпадают по времени до мс; куски анимированной
-  // надписи идут через 40 мс — их порог отсекать не должен.
+  // Реплики «стыкуются», если следующая начинается не позже чем через
+  // столько после конца предыдущей (округление таймингов при конвертации).
   const CUE_DUP_EPS = 0.002; // с
 
   // Чистку можно выключить кнопкой-метлой в панели AllPlay (рядом с «CC»).
@@ -344,7 +344,7 @@
   // изменённых (WeakMap — забывается вместе с дорожкой), removeCue/addCue
   // и запись cue.text обратимы.
   const ASS_CLEANER_KEY = 'bt-ass-cleaner';
-  const assCleanerEdits = new WeakMap(); // TextTrack → { removed: [cue], texts: Map(cue → text) }
+  const assCleanerEdits = new WeakMap(); // TextTrack → { removed: [cue], texts: Map(cue → text), ends: Map(cue → endTime) }
 
   function assCleanerEnabled() {
     try {
@@ -357,7 +357,7 @@
   function editsOf(track) {
     let edits = assCleanerEdits.get(track);
     if (!edits) {
-      edits = { removed: [], texts: new Map() };
+      edits = { removed: [], texts: new Map(), ends: new Map() };
       assCleanerEdits.set(track, edits);
     }
     return edits;
@@ -386,20 +386,28 @@
         cue.text = text;
       }
     }
-    // Дубли: ASS рисует надпись несколькими слоями (тень/обводка/заливка) с
-    // одним текстом и временем, конвертер теги срезал — в .vtt остаются N
-    // одинаковых реплик, и AllPlay рисует их столбиком (Братство, 2-я серия,
-    // 02:55 — 4 × «День, когда всё началось»). Оставляем одну. Тот же текст
-    // в другое время (повтор фразы, надпись, нарезанная по 40 мс) не трогаем.
-    // cues отсортированы по startTime, поэтому сравниваем со скользящим окном.
-    const recent = [];
+    // Дубли: ASS рисует надпись несколькими слоями (тень/обводка/заливка),
+    // конвертер теги срезал — в .vtt остаются одинаковые реплики, и AllPlay
+    // рисует их столбиком. Слои бывают с одним временем (Братство, 2-я серия,
+    // 02:55 — 4 × «День, когда всё началось» 175.53–178.53) и анимированные,
+    // со сдвигом (3-я серия, 00:46 — 6 × «Стальной Алхимик»: 45.90–50.28,
+    // 45.90–49.82, 46.06–50.36, …). Поэтому реплики с одинаковым текстом,
+    // которые перекрываются или стыкуются, сливаем в одну: первую по началу
+    // растягиваем до самого позднего конца, остальные убираем. Надпись,
+    // нарезанная по 40 мс, при этом склеивается в одну без дыр. Тот же текст
+    // после паузы (повтор фразы) не трогаем. cues отсортированы по startTime.
+    const lastByText = new Map(); // текст → оставленная реплика
     for (const cue of Array.from(track.cues)) {
-      while (recent.length && cue.startTime - recent[0].startTime > CUE_DUP_EPS) recent.shift();
-      const dup = recent.some(
-        (c) => c.text === cue.text && Math.abs(c.endTime - cue.endTime) <= CUE_DUP_EPS
-      );
-      if (dup) removeCueTracked(track, edits, cue);
-      else recent.push(cue);
+      const kept = lastByText.get(cue.text);
+      if (kept && cue.startTime <= kept.endTime + CUE_DUP_EPS) {
+        if (cue.endTime > kept.endTime) {
+          if (!edits.ends.has(kept)) edits.ends.set(kept, kept.endTime);
+          kept.endTime = cue.endTime;
+        }
+        removeCueTracked(track, edits, cue);
+      } else {
+        lastByText.set(cue.text, cue);
+      }
     }
     refreshCaptions(track);
   }
@@ -408,6 +416,7 @@
     const edits = assCleanerEdits.get(track);
     if (!edits) return;
     assCleanerEdits.delete(track);
+    for (const [cue, end] of edits.ends) cue.endTime = end;
     for (const [cue, text] of edits.texts) cue.text = text;
     for (const cue of edits.removed) track.addCue(cue);
     refreshCaptions(track);
