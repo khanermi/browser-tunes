@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.7
-// @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// @version      1.8
+// @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. У Alloha вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}). Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
 // @match        *://kodikplayer.com/*
@@ -232,6 +232,42 @@
     );
 
     installPipIntercept();
+    installAssCueCleaner();
+  }
+
+  // Alloha (AllPlay) отдаёт субтитры как <track> .vtt, криво сконвертированные
+  // из ASS: реплики-маски "m 20 73 l 13 218 ..." (\p1) и огрызки тегов
+  // "{=4}<b>текст</b>". AllPlay рисует cue.text сам (дорожка в mode=hidden),
+  // поэтому чистим реплики в TextTrack на load у <track>. Тот же код, что в
+  // ajsubs-episode-nav (installAssCueCleaner, 1.9) — факты там и в CLAUDE.md.
+  const ASS_DRAWING = /^\s*m\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?(\s+[mnlbspc]?\s*-?\d+(\.\d+)?)+\s*$/i;
+
+  function cleanAssCues(track) {
+    if (!track || !track.cues) return;
+    for (const cue of Array.from(track.cues)) {
+      if (typeof cue.text !== 'string') continue;
+      if (ASS_DRAWING.test(cue.text)) {
+        track.removeCue(cue);
+        continue;
+      }
+      const text = cue.text
+        .replace(/\{[^}]*\}/g, '')
+        .replace(/\\[Nn]/g, '\n')
+        .replace(/\\h/g, ' ');
+      if (text !== cue.text) cue.text = text;
+    }
+  }
+
+  function installAssCueCleaner() {
+    document.addEventListener(
+      'load',
+      (e) => {
+        if (e.target && e.target.tagName === 'TRACK') cleanAssCues(e.target.track);
+      },
+      true
+    );
+    // Мост мог включиться позже (по нашему сообщению) — дочистить уже загруженное.
+    document.querySelectorAll('track').forEach((t) => cleanAssCues(t.track));
   }
 
   // Кнопка PiP плеера Alloha (AllPlay — форк Plyr) вместо нативного

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         KinoGo AllPlay Episode Nav
 // @namespace    local
-// @version      1.3
-// @description  Ctrl+Left/Right — next/previous episode в Плеере 3 (AllPlay) и во вкладке "Смотреть онлайн" (Playerjs, cinemar.cc) на kinogo.ec. F9 — псевдо-fullscreen плеера (Esc — выход). Работает и когда фокус внутри iframe плеера (postMessage-мост).
+// @version      1.4
+// @description  Ctrl+Left/Right — next/previous episode в Плеере 3 (AllPlay) и во вкладке "Смотреть онлайн" (Playerjs, cinemar.cc) на kinogo.ec. F9 — псевдо-fullscreen плеера (Esc — выход). У AllPlay вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}). Работает и когда фокус внутри iframe плеера (postMessage-мост).
 // @match        *://kinogo.ec/*
 // @match        *://*.stravers.live/*
 // @match        *://cinemar.cc/*
@@ -53,6 +53,41 @@
   // и другие сайты, поэтому собственный хоткей внутри фрейма включаем только
   // когда referrer — kinogo.ec; с чужих сайтов сюда прилетают только
   // форварднутые сообщения.
+  // Alloha (AllPlay) отдаёт субтитры как <track> .vtt, криво сконвертированные
+  // из ASS: реплики-маски "m 20 73 l 13 218 ..." (\p1) и огрызки тегов
+  // "{=4}<b>текст</b>". AllPlay рисует cue.text сам (дорожка в mode=hidden),
+  // поэтому чистим реплики в TextTrack на load у <track>. Тот же код, что в
+  // ajsubs-episode-nav (installAssCueCleaner, 1.9) — факты там и в CLAUDE.md.
+  const ASS_DRAWING = /^\s*m\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?(\s+[mnlbspc]?\s*-?\d+(\.\d+)?)+\s*$/i;
+
+  function cleanAssCues(track) {
+    if (!track || !track.cues) return;
+    for (const cue of Array.from(track.cues)) {
+      if (typeof cue.text !== 'string') continue;
+      if (ASS_DRAWING.test(cue.text)) {
+        track.removeCue(cue);
+        continue;
+      }
+      const text = cue.text
+        .replace(/\{[^}]*\}/g, '')
+        .replace(/\\[Nn]/g, '\n')
+        .replace(/\\h/g, ' ');
+      if (text !== cue.text) cue.text = text;
+    }
+  }
+
+  function installAssCueCleaner() {
+    document.addEventListener(
+      'load',
+      (e) => {
+        if (e.target && e.target.tagName === 'TRACK') cleanAssCues(e.target.track);
+      },
+      true
+    );
+    // Мост мог включиться позже (по нашему сообщению) — дочистить уже загруженное.
+    document.querySelectorAll('track').forEach((t) => cleanAssCues(t.track));
+  }
+
   if (window.top !== window.self) {
     let embedder = '';
     try {
@@ -68,6 +103,7 @@
     });
 
     if (trustedEmbed) {
+      installAssCueCleaner();
       // На window в capture-фазе — раньше любых обработчиков плеера на document.
       window.addEventListener(
         'keydown',

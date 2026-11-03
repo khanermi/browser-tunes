@@ -45,7 +45,7 @@ DOM, проверенные на живой странице. Не выводи 
 
 | Плеер (как опознать) | Тюн | Где сделан | Где ещё встречается, но тюна нет |
 |---|---|---|---|
-| Alloha / AllPlay (`.allplay`, домен ротируется, напр. `*.stravers.live`) | **Чистка субтитров от остатков ASS**: реплики-маски `m 20 73 l …` → `removeCue`, теги `{…}` вырезать; на `load` у `<track>` (capture на `document`) + разовый проход | `ajsubs-episode-nav` 1.9, `installAssCueCleaner` | yummyani (`alloha.yani.tv`), kinogo (Плеер 3) — по запросу |
+| Alloha / AllPlay (`.allplay`, домен ротируется, напр. `*.stravers.live`) | **Чистка субтитров от остатков ASS**: реплики-маски `m 20 73 l …` → `removeCue`, теги `{…}` вырезать; на `load` у `<track>` (capture на `document`) + разовый проход | `ajsubs-episode-nav` 1.9 (`installAssCueCleaner`, исходник), копии в `yummyani-episode-nav` 1.8 и `kinogo-allplay-episode-nav` 1.4 — правишь одну, правь все | — |
 | Alloha / AllPlay | Ctrl+←/→ — его кнопками `button[data-allplay="prev\|next"]`, если на сайте один пункт на сезон | ajsubs 1.7, kinogo | — |
 | Alloha / AllPlay | PiP `button[data-allplay="pip"]` → псевдо-fullscreen (click в capture на `window`) | yummyani, ajsubs 1.7 | — |
 

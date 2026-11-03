@@ -148,6 +148,13 @@
   заглушку «контент недоступен» (referrer не помогает). Рабочий приём —
   открыть адрес плеера во вкладке, а там встроить его же `<iframe>` в
   страницу (тот же origin → `contentDocument` доступен).
+  - **Чистка субтитров от остатков ASS (1.8)** — тот же
+    `installAssCueCleaner`, что в `ajsubs-episode-nav` 1.9 (описание там),
+    ставится вместе с мостом хоткея. На 2026-11 AllPlay здесь прямо на
+    `alloha.yani.tv`, без вложенного фрейма. Проверено на «Монологе
+    фармацевта 3» (дорожки Crunchyroll: «Надписи», «Полные», English): мусора
+    в них нет, чистильщик срабатывает на `load` всех трёх и ничего не меняет
+    (число реплик = числу в файле). Реальный мусор проверен только на animejoy.
 - **Плеер CVH — матрёшка с shadow DOM** (1.5). `ru.yummyani.me/iframeCVH.html`
   — только обёртка: в ней `<video-player>` с открытым `shadowRoot`, в нём
   `iframe.vk-player-iframe` на `player.cdnvideohub.com` (тоже рисует всё в
@@ -196,6 +203,11 @@
   `postMessage` в iframe, а жмёт ветка скрипта внутри плеера. Собственный
   хоткей внутри плеера включается только при `document.referrer` = kinogo
   (stravers.live встраивают и другие сайты).
+- **Чистка субтитров AllPlay от остатков ASS (1.4)** — тот же
+  `installAssCueCleaner`, что в `ajsubs-episode-nav` 1.9 (описание там),
+  включается вместе с хоткеем (referrer = kinogo). Домен Плеера 3
+  (`*.stravers.live`) совпадает с Alloha на animejoy; на kinogo вживую не
+  проверялось — только синтаксис.
 - `F9` — псевдо-fullscreen, `Esc` — выход (как на rezka.ag, но без перехвата
   PiP). Растягивается `position: fixed` не `<video>` (он в чужом origin), а
   контейнер iframe `.kg-video-container`: iframe в нём `absolute` с inset 0 и
