@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         KinoGo AllPlay Episode Nav
 // @namespace    local
-// @version      1.4
-// @description  Ctrl+Left/Right — next/previous episode в Плеере 3 (AllPlay) и во вкладке "Смотреть онлайн" (Playerjs, cinemar.cc) на kinogo.ec. F9 — псевдо-fullscreen плеера (Esc — выход). У AllPlay вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}). Работает и когда фокус внутри iframe плеера (postMessage-мост).
+// @version      1.5
+// @description  Ctrl+Left/Right — next/previous episode в Плеере 3 (AllPlay) и во вкладке "Смотреть онлайн" (Playerjs, cinemar.cc) на kinogo.ec. F9 — псевдо-fullscreen плеера (Esc — выход). У AllPlay вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}), Shift+↑/↓ — размер субтитров AllPlay. Работает и когда фокус внутри iframe плеера (postMessage-мост).
 // @match        *://kinogo.ec/*
 // @match        *://*.stravers.live/*
 // @match        *://cinemar.cc/*
@@ -18,6 +18,8 @@
 
   const NAV_MESSAGE = 'kinogo-allplay-nav';
   const FS_MESSAGE = 'kinogo-allplay-fullscreen';
+  // Топ → плеер: Shift+↑/↓ — шаг размера субтитров (AllPlay).
+  const CAPTION_SIZE_MESSAGE = 'kinogo-allplay-caption-size';
   const SITE_HOST = /(^|\.)kinogo\.ec$/;
 
   function isRealTextInput(el) {
@@ -53,6 +55,94 @@
   // и другие сайты, поэтому собственный хоткей внутри фрейма включаем только
   // когда referrer — kinogo.ec; с чужих сайтов сюда прилетают только
   // форварднутые сообщения.
+  // Размер субтитров Alloha (AllPlay) — Shift+↑/↓, с геймпада ✕ + D-pad ↑/↓
+  // (комбо в input-remapper). Своих хоткеев на это у AllPlay нет, только меню
+  // «Субтитры → Параметры → Размер текста» (50/75/100/125/150/200/300/400 %).
+  // Его пункты — скрытые <button role=menuitemradio value="150%"> в
+  // div#allplay-settings-NNNN-fontSize, по возрастанию, выбранный —
+  // aria-checked="true". .click() без открытия меню применяет размер на лету
+  // (AllPlay пишет px в отдельный <style> `.allplay__caption{font-size}`, так
+  // что меняется и реплика на экране; px считаются от базового размера на
+  // момент выбора и при ресайзе не пересчитываются), ставит галочку в меню и
+  // сохраняет выбор в localStorage.allplay (captionParam.fontSize) — переживает
+  // перезагрузку. Нажатие ловим в плеере (window, capture — раньше AllPlay),
+  // с верхнего документа его присылают сообщением CAPTION_SIZE_MESSAGE.
+  function isCaptionSizeKey(e) {
+    return (
+      e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey &&
+      (e.key === 'ArrowUp' || e.key === 'ArrowDown')
+    );
+  }
+
+  function captionSizeButtons() {
+    return [
+      ...document.querySelectorAll(
+        '[id^="allplay-settings-"][id$="-fontSize"] button[role="menuitemradio"]'
+      ),
+    ];
+  }
+
+  let captionToastTimer = null;
+
+  // Подсказка «Субтитры 150%» внутри .allplay — видна и в родном fullscreen
+  // плеера, и в псевдо-fullscreen.
+  function showCaptionToast(text) {
+    const host = document.querySelector('.allplay');
+    if (!host) return;
+    let el = host.querySelector(':scope > .bt-caption-size-toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'bt-caption-size-toast';
+      el.style.cssText =
+        'position:absolute;top:8%;left:50%;transform:translateX(-50%);' +
+        'z-index:2147483647;padding:6px 14px;border-radius:6px;' +
+        'background:rgba(0,0,0,.75);color:#fff;font:600 18px/1.3 sans-serif;' +
+        'pointer-events:none;transition:opacity .3s;opacity:0;';
+      host.appendChild(el);
+    }
+    el.textContent = text;
+    el.style.opacity = '1';
+    clearTimeout(captionToastTimer);
+    captionToastTimer = setTimeout(() => {
+      el.style.opacity = '0';
+    }, 1200);
+  }
+
+  // false — это не AllPlay (или меню ещё не построено), хоткей не наш.
+  function stepCaptionSize(delta) {
+    const btns = captionSizeButtons();
+    if (!btns.length) return false;
+    let idx = btns.findIndex((b) => b.getAttribute('aria-checked') === 'true');
+    if (idx === -1) idx = btns.findIndex((b) => b.value === '100%');
+    if (idx === -1) idx = 0;
+    const next = Math.max(0, Math.min(btns.length - 1, idx + delta));
+    if (next !== idx) btns[next].click();
+    const edge = next === idx ? (delta > 0 ? ' (максимум)' : ' (минимум)') : '';
+    showCaptionToast(`Субтитры ${btns[next].value}${edge}`);
+    return true;
+  }
+
+  function installCaptionSizeKeys() {
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (!isCaptionSizeKey(e)) return;
+        if (isRealTextInput(e.composedPath()[0])) return;
+        if (!stepCaptionSize(e.key === 'ArrowUp' ? 1 : -1)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      },
+      true
+    );
+    window.addEventListener('message', (e) => {
+      const data = e.data;
+      if (!data || data.type !== CAPTION_SIZE_MESSAGE) return;
+      if (e.source !== window.parent) return;
+      if (data.delta !== 1 && data.delta !== -1) return;
+      stepCaptionSize(data.delta);
+    });
+  }
+
   // Alloha (AllPlay) отдаёт субтитры как <track> .vtt, криво сконвертированные
   // из ASS: реплики-маски "m 20 73 l 13 218 ..." (\p1) и огрызки тегов
   // "{=4}<b>текст</b>". AllPlay рисует cue.text сам (дорожка в mode=hidden),
@@ -104,6 +194,7 @@
 
     if (trustedEmbed) {
       installAssCueCleaner();
+      installCaptionSizeKeys();
       // На window в capture-фазе — раньше любых обработчиков плеера на document.
       window.addEventListener(
         'keydown',
@@ -212,6 +303,19 @@
 
       if (e.key === 'Escape' && fsContainer) {
         exitFullscreen();
+        return;
+      }
+
+      if (isCaptionSizeKey(e)) {
+        // Размер субтитров меняет сам плеер (Alloha) — пробрасываем ему.
+        const frame = playerFrame();
+        if (!frame || !frame.contentWindow) return;
+        e.preventDefault();
+        e.stopPropagation();
+        frame.contentWindow.postMessage(
+          { type: CAPTION_SIZE_MESSAGE, delta: e.key === 'ArrowUp' ? 1 : -1 },
+          '*'
+        );
         return;
       }
 
