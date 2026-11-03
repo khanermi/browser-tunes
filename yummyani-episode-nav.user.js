@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.10
-// @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. У Alloha вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}), Shift+↑/↓ — размер субтитров Alloha. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// @version      1.11
+// @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. У Alloha вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
 // @match        *://kodikplayer.com/*
@@ -337,19 +337,54 @@
   // надписи идут через 40 мс — их порог отсекать не должен.
   const CUE_DUP_EPS = 0.002; // с
 
+  // Чистку можно выключить кнопкой-метлой в панели AllPlay (рядом с «CC»).
+  // Флаг — в localStorage домена плеера (у Alloha на animejoy домен
+  // ротируется — тогда флаг сбрасывается на «вкл»). Выключение откатывает
+  // правки: для каждой дорожки помним убранные реплики и исходный текст
+  // изменённых (WeakMap — забывается вместе с дорожкой), removeCue/addCue
+  // и запись cue.text обратимы.
+  const ASS_CLEANER_KEY = 'bt-ass-cleaner';
+  const assCleanerEdits = new WeakMap(); // TextTrack → { removed: [cue], texts: Map(cue → text) }
+
+  function assCleanerEnabled() {
+    try {
+      return localStorage.getItem(ASS_CLEANER_KEY) !== '0';
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function editsOf(track) {
+    let edits = assCleanerEdits.get(track);
+    if (!edits) {
+      edits = { removed: [], texts: new Map() };
+      assCleanerEdits.set(track, edits);
+    }
+    return edits;
+  }
+
+  function removeCueTracked(track, edits, cue) {
+    edits.removed.push(cue);
+    track.removeCue(cue);
+  }
+
   function cleanAssCues(track) {
-    if (!track || !track.cues) return;
+    if (!track || !track.cues || !assCleanerEnabled()) return;
+    const edits = editsOf(track);
     for (const cue of Array.from(track.cues)) {
       if (typeof cue.text !== 'string') continue;
       if (ASS_DRAWING.test(cue.text)) {
-        track.removeCue(cue);
+        removeCueTracked(track, edits, cue);
         continue;
       }
       const text = cue.text
         .replace(/\{[^}]*\}/g, '')
         .replace(/\\[Nn]/g, '\n')
         .replace(/\\h/g, ' ');
-      if (text !== cue.text) cue.text = text;
+      if (text !== cue.text) {
+        if (!edits.texts.has(cue)) edits.texts.set(cue, cue.text);
+        cue.text = text;
+      }
     }
     // Дубли: ASS рисует надпись несколькими слоями (тень/обводка/заливка) с
     // одним текстом и временем, конвертер теги срезал — в .vtt остаются N
@@ -363,21 +398,108 @@
       const dup = recent.some(
         (c) => c.text === cue.text && Math.abs(c.endTime - cue.endTime) <= CUE_DUP_EPS
       );
-      if (dup) track.removeCue(cue);
+      if (dup) removeCueTracked(track, edits, cue);
       else recent.push(cue);
     }
+    refreshCaptions(track);
+  }
+
+  function restoreAssCues(track) {
+    const edits = assCleanerEdits.get(track);
+    if (!edits) return;
+    assCleanerEdits.delete(track);
+    for (const [cue, text] of edits.texts) cue.text = text;
+    for (const cue of edits.removed) track.addCue(cue);
+    refreshCaptions(track);
+  }
+
+  // AllPlay перерисовывает .allplay__captions по cuechange — без него
+  // реплика на экране поменялась бы только на следующей.
+  function refreshCaptions(track) {
+    if (track.mode !== 'disabled') track.dispatchEvent(new Event('cuechange'));
+  }
+
+  function allTextTracks() {
+    return Array.from(document.querySelectorAll('track'), (t) => t.track);
+  }
+
+  function setAssCleaner(enabled) {
+    try {
+      localStorage.setItem(ASS_CLEANER_KEY, enabled ? '1' : '0');
+    } catch (e) {
+      /* без хранилища — работает до перезагрузки */
+    }
+    allTextTracks().forEach(enabled ? cleanAssCues : restoreAssCues);
+    syncAssCleanerButton();
+  }
+
+  // Кнопка — в самой панели (.allplay__controls), с классами и разметкой
+  // родных кнопок AllPlay (иконки icon--pressed/--not-pressed, подсказки
+  // label--pressed/--not-pressed): прячется и показывается вместе с
+  // интерфейсом, в том числе в fullscreen, и выглядит как своя. Панель
+  // AllPlay пересоздаёт при каждой смене серии (корневой .allplay живёт) —
+  // поэтому вставляем заново по loadstart и по смене детей .allplay.
+  const ASS_BTN_CLASS = 'bt-ass-cleaner-btn';
+  const BROOM =
+    '<path d="M16.6 1.4a.9.9 0 0 0-1.3 0L9.7 7l1.3 1.3 5.6-5.6a.9.9 0 0 0 0-1.3z"/>' +
+    '<path d="M8.6 7.6 6.9 9.3l1.8 1.8 1.7-1.7zM6.2 10 1 13.2c1 1.6 2.2 2.8 3.8 3.8L8 11.8z"/>';
+  const SLASH = '<path d="M1.6.3 17.7 16.4l-1.3 1.3L.3 1.6z"/>';
+
+  function syncAssCleanerButton() {
+    const btn = document.querySelector('.' + ASS_BTN_CLASS);
+    if (!btn) return;
+    const on = assCleanerEnabled();
+    btn.classList.toggle('allplay__control--pressed', on);
+    btn.setAttribute('aria-pressed', String(on));
+  }
+
+  function ensureAssCleanerButton() {
+    const captionsBtn = document.querySelector('.allplay__controls button[data-allplay="captions"]');
+    if (!captionsBtn || document.querySelector('.' + ASS_BTN_CLASS)) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `allplay__controls__item allplay__control ${ASS_BTN_CLASS}`;
+    btn.innerHTML =
+      `<svg class="icon--pressed" viewBox="0 0 18 18" aria-hidden="true">${BROOM}</svg>` +
+      `<svg class="icon--not-pressed" viewBox="0 0 18 18" aria-hidden="true" style="opacity:.6">${BROOM}${SLASH}</svg>` +
+      '<span class="label--pressed allplay__tooltip">Чистка субтитров: вкл</span>' +
+      '<span class="label--not-pressed allplay__tooltip">Чистка субтитров: выкл</span>';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setAssCleaner(!assCleanerEnabled());
+    });
+    captionsBtn.after(btn);
+    syncAssCleanerButton();
+  }
+
+  let assRootObserved = null;
+
+  function watchAllplayRoot() {
+    ensureAssCleanerButton();
+    const root = document.querySelector('.allplay');
+    if (!root || root === assRootObserved) return;
+    assRootObserved = root;
+    // Только прямые дети: панель — ребёнок .allplay; subtree не нужен.
+    new MutationObserver(ensureAssCleanerButton).observe(root, { childList: true });
   }
 
   function installAssCueCleaner() {
     document.addEventListener(
       'load',
       (e) => {
-        if (e.target && e.target.tagName === 'TRACK') cleanAssCues(e.target.track);
+        if (!e.target || e.target.tagName !== 'TRACK') return;
+        // Новая загрузка — новые реплики, старые правки к ним не относятся.
+        assCleanerEdits.delete(e.target.track);
+        cleanAssCues(e.target.track);
+        watchAllplayRoot();
       },
       true
     );
+    // loadstart не всплывает — capture; приходит сразу после пересборки панели.
+    document.addEventListener('loadstart', watchAllplayRoot, true);
     // Мост мог включиться позже (по нашему сообщению) — дочистить уже загруженное.
-    document.querySelectorAll('track').forEach((t) => cleanAssCues(t.track));
+    allTextTracks().forEach(cleanAssCues);
+    watchAllplayRoot();
   }
 
   // Кнопка PiP плеера Alloha (AllPlay — форк Plyr) вместо нативного
