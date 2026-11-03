@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.8
-// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// @version      1.9
+// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}). Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // Плееры живут на своих доменах, а у Alloha домен случайный и меняется
 // (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
 // а сразу за шапкой кода гейтится: верхний документ — только ajsubs/animejoy/otakujoy,
@@ -174,7 +174,46 @@
     installHoverArming();
     installSpaceFallback();
     installAllplay();
+    installAssCueCleaner();
     if (location.hostname === 'my.mail.ru') installMailFullscreenIntercept();
+  }
+
+  // Alloha отдаёт субтитры как <track> .vtt, сконвертированные из ASS
+  // небрежно: остаются векторные маски (\p1 — реплика целиком из "m 20 73 l
+  // 13 218 ...") и огрызки тегов ("{=4}<b>текст</b>"). AllPlay держит дорожку
+  // в mode=hidden и сам рисует cue.text в .allplay__captions, поэтому чистим
+  // реплики прямо в TextTrack: маски — removeCue, теги в {} — вырезаем
+  // (VTTCue.text writable, AllPlay показывает исправленное). Дорожка грузится
+  // при включении (mode≠disabled) и заново при смене серии — ловим load у
+  // <track> (не всплывает и до window не доходит → capture на document).
+  const ASS_DRAWING = /^\s*m\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?(\s+[mnlbspc]?\s*-?\d+(\.\d+)?)+\s*$/i;
+
+  function cleanAssCues(track) {
+    if (!track || !track.cues) return;
+    for (const cue of Array.from(track.cues)) {
+      if (typeof cue.text !== 'string') continue;
+      if (ASS_DRAWING.test(cue.text)) {
+        track.removeCue(cue);
+        continue;
+      }
+      const text = cue.text
+        .replace(/\{[^}]*\}/g, '')
+        .replace(/\\[Nn]/g, '\n')
+        .replace(/\\h/g, ' ');
+      if (text !== cue.text) cue.text = text;
+    }
+  }
+
+  function installAssCueCleaner() {
+    document.addEventListener(
+      'load',
+      (e) => {
+        if (e.target && e.target.tagName === 'TRACK') cleanAssCues(e.target.track);
+      },
+      true
+    );
+    // Мост мог включиться позже (по нашему сообщению) — дочистить уже загруженное.
+    document.querySelectorAll('track').forEach((t) => cleanAssCues(t.track));
   }
 
   // Alloha — плеер AllPlay (форк Plyr: классы allplay__*, кнопки
