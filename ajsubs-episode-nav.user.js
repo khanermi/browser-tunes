@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.13
-// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// @version      1.14
+// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. AllVideo стартует с громкостью 40%. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // Плееры живут на своих доменах, а у Alloha домен случайный и меняется
 // (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
 // а сразу за шапкой кода гейтится: верхний документ — только ajsubs/animejoy/otakujoy,
@@ -31,6 +31,9 @@
   const CAPTION_SIZE_MESSAGE = 'ajsubs-episode-nav-caption-size';
   // Один и тот же движок AnimeJoy (DLE-шаблон, плейлист, плееры) на нескольких доменах (otakujoy.fun — зеркало animejoy с 1.8).
   const SITE_HOST = /(^|\.)((ajsubs|animejoy)\.ru|otakujoy\.fun)$/;
+  // Конечный домен AllVideo — incvideo1.online (fsst.online на него редиректит).
+  const ALLVIDEO_HOST = /^(fsst|incvideo\d*)\.online$/;
+  const ALLVIDEO_START_VOLUME = '0.4';
 
   // Внутри плеера: серия грузится асинхронно, <video> появляется в документе
   // позже, чем прилетает просьба его сфокусировать — поэтому опрашиваем.
@@ -701,6 +704,20 @@
     );
   }
 
+  // Playerjs в AllVideo при старте читает громкость из localStorage.pljsvolume,
+  // а ↑/↓ её туда не сохраняют (проверено: video.volume 0.6, ключ остался 0.4),
+  // так что после перезагрузки громкость откатывается. Пишем ключ на
+  // document-start, до скрипта плеера: каждая загрузка начинается с 40%, ↑/↓
+  // работают как обычно до следующей загрузки.
+  function setAllVideoStartVolume() {
+    if (!ALLVIDEO_HOST.test(location.hostname)) return;
+    try {
+      localStorage.setItem('pljsvolume', ALLVIDEO_START_VOLUME);
+    } catch (e) {
+      /* localStorage закрыт — останется громкость плеера */
+    }
+  }
+
   // ==================== Ветка внутри iframe плеера ====================
   //
   // Домены плееров используются и другими сайтами, поэтому хоткей включаем
@@ -715,7 +732,10 @@
     } catch (e) {
       /* referrer пустой/битый — считаем, что встроены не нами */
     }
-    if (SITE_HOST.test(embedder)) installKeyBridge();
+    if (SITE_HOST.test(embedder)) {
+      installKeyBridge();
+      setAllVideoStartVolume();
+    }
     return;
   }
 
