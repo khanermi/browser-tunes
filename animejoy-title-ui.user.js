@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy Title UI
 // @namespace    local
-// @version      1.2
+// @version      1.3
 // @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
 // @match        *://otakujoy.fun/*
 // @match        *://animejoy.ru/*
@@ -187,7 +187,7 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
 
 /* contain: size — сетка серий не растягивает грид, а занимает остаток высоты плеера */
 #ojx .playlists-videos { grid-area: eps; contain: size; overflow-y: auto; overscroll-behavior: contain; padding: 4px 10px 10px; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); background: var(--surface); scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent; }
-#ojx .playlists-videos ul { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; }
+#ojx .playlists-videos ul { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(var(--ojx-cell, 48px), 1fr)); gap: 6px; }
 #ojx .playlists-videos .playlists-items li { display: none !important; }
 #ojx .playlists-videos .playlists-items li.visible { display: flex !important; align-items: center; justify-content: center; position: relative; width: auto !important; height: 40px; margin: 0; padding: 0 6px; overflow: hidden; border-radius: 8px; background: var(--surface-2); color: var(--text); font-family: inherit; font-size: 0; font-weight: 500; line-height: 1; text-align: center; cursor: pointer; user-select: none; transition: background .12s, color .12s, box-shadow .12s; }
 #ojx .playlists-videos .playlists-items li.visible::before { content: attr(data-ojx-label); max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-variant-numeric: tabular-nums; }
@@ -1025,6 +1025,11 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
         setFlag(li, 'data-ojx-br', prevKind !== null && li.dataset.ojxKind !== prevKind);
         prevKind = li.dataset.ojxKind;
       }
+
+      // Ширина колонки — по самой длинной подписи в одну плитку: «1101» у
+      // Ван-Писа в 48px не влезала, и жирная активная плитка становилась «11…».
+      const longest = Math.max(0, ...visible.filter((li) => li.dataset.ojxSpan === '1').map((li) => [...li.dataset.ojxLabel].length));
+      watch.style.setProperty('--ojx-cell', Math.max(48, 18 + 10 * longest) + 'px');
 
       const active = visible.find((li) => li.classList.contains('active')) || null;
       count.textContent = String(visible.length);
