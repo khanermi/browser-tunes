@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy Title UI
 // @namespace    local
-// @version      1.3
+// @version      1.4
 // @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
 // @match        *://otakujoy.fun/*
 // @match        *://animejoy.ru/*
@@ -171,6 +171,10 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
 #ojx .playlists-lists .playlists-items li.visible.active { background: var(--accent-strong); color: #fff; font-weight: 600; }
 #ojx .playlists-lists .playlists-items + .playlists-items li.visible { height: 24px; padding: 0 9px; font-size: 12px; }
 #ojx .playlists-lists .playlists-items + .playlists-items li.visible.active { background: var(--accent-soft); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+/* Уровень диапазонов «1101-1110» не показываем — его серии все в сетке. */
+#ojx .playlists-lists .playlists-items[data-ojx-ranges] { display: none !important; }
+#ojx .playlists-lists .playlists-items[data-ojx-cap]::before { content: attr(data-ojx-cap); display: block; margin: 0 0 5px 2px; color: var(--faint); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+#ojx .playlists-lists .playlists-items[data-ojx-cap] + .playlists-items[data-ojx-cap] { margin-top: 4px; }
 
 #ojx .playlists-iframe { grid-area: frame; align-self: start; margin: 0; background: #000; }
 #ojx .playlists-iframe:not([style*="fixed"]) { height: auto; aspect-ratio: 16 / 9; max-height: calc(100vh - 24px); border-radius: var(--radius); overflow: hidden; box-shadow: 0 0 0 1px var(--border); }
@@ -189,11 +193,12 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
 #ojx .playlists-videos { grid-area: eps; contain: size; overflow-y: auto; overscroll-behavior: contain; padding: 4px 10px 10px; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); background: var(--surface); scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent; }
 #ojx .playlists-videos ul { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(var(--ojx-cell, 48px), 1fr)); gap: 6px; }
 #ojx .playlists-videos .playlists-items li { display: none !important; }
-#ojx .playlists-videos .playlists-items li.visible { display: flex !important; align-items: center; justify-content: center; position: relative; width: auto !important; height: 40px; margin: 0; padding: 0 6px; overflow: hidden; border-radius: 8px; background: var(--surface-2); color: var(--text); font-family: inherit; font-size: 0; font-weight: 500; line-height: 1; text-align: center; cursor: pointer; user-select: none; transition: background .12s, color .12s, box-shadow .12s; }
-#ojx .playlists-videos .playlists-items li.visible::before { content: attr(data-ojx-label); max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-variant-numeric: tabular-nums; }
-#ojx .playlists-videos .playlists-items li.visible:hover { background: var(--surface-3); }
-#ojx .playlists-videos .playlists-items li.visible.active { background: var(--accent-strong); color: #fff; font-weight: 700; box-shadow: 0 4px 14px rgba(115, 80, 255, .35); }
-#ojx .playlists-videos .playlists-items li.visible:has(.playlists-view.watched):not(.active) { color: var(--muted); }
+#ojx .playlists-videos .playlists-items li[data-ojx-show] { display: flex !important; align-items: center; justify-content: center; position: relative; width: auto !important; height: 40px; margin: 0; padding: 0 6px; overflow: hidden; border-radius: 8px; background: var(--surface-2); color: var(--text); font-family: inherit; font-size: 0; font-weight: 500; line-height: 1; text-align: center; cursor: pointer; user-select: none; transition: background .12s, color .12s, box-shadow .12s; }
+#ojx .playlists-videos .playlists-items li[data-ojx-show]::before { content: attr(data-ojx-label); max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-variant-numeric: tabular-nums; }
+#ojx .playlists-videos .playlists-items li[data-ojx-extra]:not(.active)::before { font-size: 12.5px; color: var(--muted); }
+#ojx .playlists-videos .playlists-items li[data-ojx-show]:hover { background: var(--surface-3); }
+#ojx .playlists-videos .playlists-items li[data-ojx-show].active { background: var(--accent-strong); color: #fff; font-weight: 700; box-shadow: 0 4px 14px rgba(115, 80, 255, .35); }
+#ojx .playlists-videos .playlists-items li[data-ojx-show]:has(.playlists-view.watched):not(.active) { color: var(--muted); }
 #ojx .playlists-videos li[data-ojx-span="2"] { grid-column-end: span 2; }
 #ojx .playlists-videos li[data-ojx-span="3"] { grid-column-end: span 3; }
 #ojx .playlists-videos li[data-ojx-span="full"] { grid-column: 1 / -1; }
@@ -958,6 +963,8 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     li.dataset.ojxKind = text.replace(/\d+/g, '#');
     li.dataset.ojxSpan = len <= 4 ? '1' : len <= 9 ? '2' : len <= 15 ? '3' : 'full';
     if (label !== text && !/^\d/.test(label)) li.title = text;
+    // не номер серии («Спэшл», «SP 3», «Все серии») — тише, чтобы среди номеров не сливалось
+    if (!/^\d+(-\d+)?$/.test(label)) li.dataset.ojxExtra = '';
   }
 
   // Восстановление выбора сайтом при загрузке (loadPlaylistSelected) ломается
@@ -977,6 +984,51 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     for (const li of all) {
       li.classList.toggle('visible', li.dataset.id === playing.dataset.id);
       li.classList.toggle('active', li === playing);
+    }
+  }
+
+  // Уровни .playlists-lists: озвучка → плеер → диапазон «1101-1110» (у
+  // Ван-Писа все три; у большинства тайтлов — только плееры, иногда +
+  // диапазоны). data-id вложенные: озвучка 0_1, плеер 0_1_2, диапазон
+  // 0_1_2_3; data-id серии = data-id пункта нижнего уровня. Подписи уровней —
+  // по содержимому: все пункты «N-M» — диапазоны, есть имя плеера — «Плеер»,
+  // иначе «Озвучка».
+  const RANGE_RE = /^\s*\d+\s*[-–]\s*\d+\s*$/;
+  const PLAYER_NAME_RE = /наш плеер|allvideo|alloha|sibnet|dzen|matreshka|mail|cda|kodik|\bvk\b|\bok\b|rutube|youtube/i;
+
+  function listLevels(ajax) {
+    return [...ajax.querySelectorAll('.playlists-lists .playlists-items')];
+  }
+
+  function rangeLevel(ajax) {
+    return (
+      listLevels(ajax).find((level) => {
+        const items = [...level.querySelectorAll('li')];
+        return items.length > 0 && items.every((li) => RANGE_RE.test(li.textContent));
+      }) || null
+    );
+  }
+
+  // Серии в сетке: при уровне диапазонов — все серии выбранного плеера
+  // (видимые пункты-диапазоны), иначе — то, что показал сайт (li.visible).
+  function shownEpisodes(ajax, all) {
+    const visible = all.filter((li) => li.classList.contains('visible'));
+    const ranges = rangeLevel(ajax);
+    if (!ranges) return visible;
+    const ids = new Set([...ranges.querySelectorAll('li.visible')].map((li) => li.getAttribute('data-id')));
+    if (!ids.size) return visible;
+    return all.filter((li) => ids.has(li.getAttribute('data-id')));
+  }
+
+  function labelLevels(ajax) {
+    const ranges = rangeLevel(ajax);
+    const levels = listLevels(ajax);
+    const shown = levels.filter((level) => level !== ranges);
+    for (const level of levels) {
+      setFlag(level, 'data-ojx-ranges', level === ranges);
+      const cap = shown.length < 2 || level === ranges ? null : PLAYER_NAME_RE.test(level.textContent) ? 'Плеер' : 'Озвучка';
+      if (cap) level.dataset.ojxCap = cap;
+      else delete level.dataset.ojxCap;
     }
   }
 
@@ -1018,13 +1070,24 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
       }
       watch.classList.toggle('ojx-single', Object.values(perPlayer).every((n) => n < 2));
 
-      // Смена вида пункта («серия» → «спэшл», арки Kodik) — с новой строки.
-      const visible = all.filter((li) => li.classList.contains('visible'));
-      let prevKind = null;
+      labelLevels(ajax);
+      const visible = shownEpisodes(ajax, all);
+      const shownSet = new Set(visible);
+      for (const li of all) setFlag(li, 'data-ojx-show', shownSet.has(li));
+
+      // Смена вида пункта («серия» → «спэшл», арки Kodik) — с новой строки,
+      // но одиночный пункт среди серий («Спэшл» между 1108 и 1109 у
+      // Ван-Писа) строку не рвёт: перенос только между сериями длиной ≥ 2.
+      const runs = [];
       for (const li of visible) {
-        setFlag(li, 'data-ojx-br', prevKind !== null && li.dataset.ojxKind !== prevKind);
-        prevKind = li.dataset.ojxKind;
+        const last = runs[runs.length - 1];
+        if (last && last.kind === li.dataset.ojxKind) last.items.push(li);
+        else runs.push({ kind: li.dataset.ojxKind, items: [li] });
       }
+      runs.forEach((r, i) => {
+        const prev = runs[i - 1];
+        r.items.forEach((li, j) => setFlag(li, 'data-ojx-br', j === 0 && !!prev && prev.items.length > 1 && r.items.length > 1));
+      });
 
       // Ширина колонки — по самой длинной подписи в одну плитку: «1101» у
       // Ван-Писа в 48px не влезала, и жирная активная плитка становилась «11…».
@@ -1066,8 +1129,17 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     const text = current.dataset.ojxText;
     const chipId = String(chip.dataset.id);
     setTimeout(() => {
-      const visible = [...document.querySelectorAll('#ojx .playlists-videos li.visible')];
-      let target = visible.find((li) => li.dataset.ojxText === text);
+      const ajax = document.querySelector('#ojx .playlists-ajax');
+      const all = ajax ? [...ajax.querySelectorAll('.playlists-videos li')] : [];
+      // Сначала среди серий выбранного плеера (все его диапазоны): иначе
+      // при смене озвучки нашлась бы та же серия у другого плеера, а сайт
+      // уже включил первый.
+      let target = shownEpisodes(ajax, all).find((li) => li.dataset.ojxText === text);
+      if (target && !target.classList.contains('visible')) {
+        const range = document.querySelector('#ojx .playlists-lists li[data-id="' + cssEscape(target.dataset.id) + '"]');
+        if (range) range.click();
+        else target = null;
+      }
       if (!target) {
         const other = [...document.querySelectorAll('#ojx .playlists-videos li')].find(
           (li) => li.dataset.ojxText === text && String(li.dataset.id).startsWith(chipId + '_')
@@ -1109,7 +1181,16 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
         }
         const episode = e.target.closest('#ojx .playlists-videos li');
         // клик по отметке «просмотрено» (span внутри) сайт серией не считает
-        if (episode && e.target === episode) setTimeout(revealPlayer, 0);
+        if (episode && e.target === episode) {
+          // Серия из другого диапазона (в сетке все диапазоны плеера):
+          // сначала диапазон — сайт покажет его серии и запомнит выбор, —
+          // а этот же клик дальше дойдёт до обработчика сайта на body.
+          if (!episode.classList.contains('visible')) {
+            const range = document.querySelector('#ojx .playlists-lists li[data-id="' + cssEscape(episode.dataset.id) + '"]');
+            if (range) range.click();
+          }
+          setTimeout(revealPlayer, 0);
+        }
       },
       true
     );

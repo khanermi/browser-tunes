@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.15
+// @version      1.16
 // @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. AllVideo запоминает громкость, изменённую ↑/↓. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // Плееры живут на своих доменах, а у Alloha домен случайный и меняется
 // (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
@@ -765,6 +765,28 @@
     return [...document.querySelectorAll('.playlists-videos li.visible')];
   }
 
+  // Длинные сериалы (Ван-Пис 1101+, CDA/Sibnet у «Братства») сайт режет на
+  // диапазоны «1101-1110» — нижний уровень .playlists-lists, data-id пункта
+  // диапазона = data-id его серий, соседние диапазоны того же плеера —
+  // соседние li.visible. На краю диапазона Ctrl+←/→ переходит в соседний:
+  // клик по нему (сайт показывает его серии и включает первую), дальше —
+  // первая/последняя серия. Без уровня диапазонов (data-id серий = пункт
+  // плеера) соседний пункт — другой плеер, туда не переходим.
+  const RANGE_RE = /^\s*\d+\s*[-–]\s*\d+\s*$/;
+
+  function crossRange(edge, delta) {
+    const id = edge && edge.getAttribute('data-id');
+    if (!id) return null;
+    const chip = [...document.querySelectorAll('.playlists-lists li.visible')].find((li) => li.getAttribute('data-id') === id);
+    if (!chip || !RANGE_RE.test(chip.textContent)) return null;
+    const chips = [...chip.parentElement.children].filter((li) => li.classList.contains('visible'));
+    const next = chips[chips.indexOf(chip) + delta];
+    if (!next || !RANGE_RE.test(next.textContent)) return null;
+    next.click();
+    const items = visibleEpisodes();
+    return (delta > 0 ? items[0] : items[items.length - 1]) || null;
+  }
+
   function playerFrame() {
     return document.querySelector('.playlists-iframe iframe');
   }
@@ -882,12 +904,17 @@
     const idx = items.findIndex((li) => li.classList.contains('active'));
     if (idx === -1) return 'unavailable';
 
-    const target = items[idx + delta];
-    if (!target) return 'boundary';
+    let target = items[idx + delta];
+    if (!target) {
+      target = crossRange(items[idx], delta);
+      if (!target) return 'boundary';
+    }
 
     // Обработчик сайта требует event.target именно <li> (клик по значку
     // "просмотрено" внутри он игнорирует) — .click() на самом li это даёт.
-    target.click();
+    // После перехода в соседний диапазон вперёд его первую серию сайт уже
+    // включил — второй клик перезагрузил бы плеер.
+    if (!target.classList.contains('active')) target.click();
     scrollStripTo(target);
 
     focusPlayer();
