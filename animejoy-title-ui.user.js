@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AnimeJoy Title UI
 // @namespace    local
-// @version      1.1
-// @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
+// @version      1.2
+// @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
 // @match        *://otakujoy.fun/*
 // @match        *://animejoy.ru/*
 // @run-at       document-start
@@ -17,7 +17,9 @@
   if (window.top !== window) return;
   // Страница тайтла DLE: /<раздел>/<id>-<slug>.html (tv-serialy, anime-films…).
   // Новости выглядят так же — их отсеивает проверка на .playlists-ajax в build().
-  if (!/^\/[^/]+\/\d+-[^/]+\.html$/.test(location.pathname)) return;
+  // Главная (/) — свой поиск «как Google» (лента сайта остаётся на /index.php).
+  const IS_HOME = location.pathname === '/';
+  if (!IS_HOME && !/^\/[^/]+\/\d+-[^/]+\.html$/.test(location.pathname)) return;
 
   const OFF_KEY = 'ojx-off'; // '1' — пользователь вернул обычный вид сайта
 
@@ -88,6 +90,26 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
 #ojx .ojx-card-img picture, #ojx .ojx-card-img img { display: block; width: 100%; height: 100%; object-fit: cover; }
 #ojx .ojx-card-t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 13.5px; font-weight: 600; line-height: 1.3; }
 #ojx .ojx-card-m { font-size: 12px; color: var(--muted); }
+#ojx .ojx-card-img { position: relative; }
+#ojx .ojx-card.is-match { box-shadow: inset 0 0 0 1px rgba(63, 207, 142, .55); }
+#ojx .ojx-card-flag { position: absolute; top: 6px; left: 6px; padding: 2px 7px; border-radius: 999px; background: rgba(13, 15, 20, .85); color: var(--ok); font-size: 11px; font-weight: 600; }
+
+/* Главная: логотип + поле по центру; после поиска поле уезжает наверх */
+#ojx.ojx-home-page { max-width: 1240px; min-height: 100vh; padding: 0 24px 48px; }
+#ojx .ojx-home-hero { display: flex; flex-direction: column; align-items: center; gap: 22px; padding-top: 24vh; transition: padding-top .25s ease, gap .25s ease; }
+html.ojx-has-results #ojx .ojx-home-hero { padding-top: 28px; gap: 14px; }
+#ojx .ojx-logo { display: flex; font-size: 76px; font-weight: 800; line-height: 1; letter-spacing: -.06em; user-select: none; transition: font-size .25s ease; }
+html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
+#ojx .ojx-logo-a { color: #ff2d46; }
+#ojx .ojx-logo-j { color: #7350ff; }
+#ojx .ojx-search.ojx-search-big { flex: none; width: min(680px, 100%); max-width: none; margin: 0; }
+#ojx .ojx-search-big .ojx-search-input { height: 52px; padding: 0 22px; font-size: 16px; box-shadow: 0 10px 34px rgba(0, 0, 0, .4); }
+#ojx .ojx-home-links { display: flex; gap: 18px; font-size: 13px; }
+#ojx .ojx-home-links a { color: var(--faint); transition: color .12s; }
+#ojx .ojx-home-links a:hover { color: var(--text); }
+#ojx .ojx-home-results { margin-top: 26px; }
+#ojx .ojx-home-results .ojx-sr-head { padding: 0 6px 12px; }
+#ojx .ojx-home-results .ojx-sr-grid { padding: 0; overflow: visible; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 
 /* Шапка: постер | названия | части. Уже 1200px — части под названиями.
    Высота шапки ≈ высоте постера, чтобы плеер ниже влезал в окно целиком. */
@@ -299,7 +321,9 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
 
   // ==================== Обычный вид ====================
 
-  if (storageGet(OFF_KEY) === '1') {
+  // «Обычный вид» — только для страниц тайтла: главная — это поиск, ссылка с
+  // AniList должна работать всегда.
+  if (!IS_HOME && storageGet(OFF_KEY) === '1') {
     onReady(() => {
       if (!document.querySelector('article.fullstory .playlists-ajax')) return;
       const back = el('button', { type: 'button', text: 'Новый вид', title: 'Включить интерфейс AnimeJoy Title UI' });
@@ -360,7 +384,7 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
         location.reload();
       }
     );
-    return el('header', { class: 'ojx-bar' }, crumbs, buildSearch(), classic);
+    return el('header', { class: 'ojx-bar' }, crumbs, buildSearch('overlay'), classic);
   }
 
   // ==================== Поиск ====================
@@ -374,53 +398,60 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
   // «Сезон:» («осень-2025»). Всего найдено — .search_result_num «найдено 12
   // ответов». Ничего не нашлось — просто ни одной статьи, без сообщения.
   const SEARCH_PAGE_SIZE = 10;
-  const search = { query: '', page: 0, total: 0, shown: 0, controller: null };
+  // year — год тайтла с AniList: такие карточки подсвечиваются
+  const search = { query: '', page: 0, total: 0, shown: 0, controller: null, year: '', note: '' };
   let searchUi = null;
 
-  function buildSearch() {
+  // mode: 'overlay' — поле в панели страницы тайтла, результаты поверх неё;
+  // 'inline' — главная: большое поле, результаты под ним.
+  function buildSearch(mode) {
+    const inline = mode === 'inline';
     const input = el('input', {
       type: 'search',
       class: 'ojx-search-input',
-      placeholder: 'Поиск по сайту',
+      placeholder: inline ? 'Название аниме — по-русски, ромадзи или по-английски' : 'Поиск по сайту',
       autocomplete: 'off',
       spellcheck: 'false',
       'aria-label': 'Поиск по сайту',
     });
-    const form = el('form', { class: 'ojx-search', role: 'search' }, input, el('kbd', { text: '/' }));
+    const form = el('form', { class: 'ojx-search' + (inline ? ' ojx-search-big' : ''), role: 'search' }, input, !inline && el('kbd', { text: '/' }));
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const query = input.value.trim();
       if (!query) return;
-      if (query === search.query && search.shown) openResults();
+      if (inline) setHash({ q: query });
+      if (!inline && query === search.query && search.shown) openResults();
       else runSearch(query, 1);
-    });
-    // Вернулись в поле с тем же запросом — показываем уже найденное.
-    input.addEventListener('focus', () => {
-      if (search.shown && input.value.trim() === search.query) openResults();
     });
 
     const grid = el('div', { class: 'ojx-sr-grid' });
     const status = el('div', { class: 'ojx-sr-status' });
     const more = button({ class: 'ojx-btn ojx-sr-more', text: 'Показать ещё', hidden: true }, () => runSearch(search.query, search.page + 1));
     const title = el('div', { class: 'ojx-sr-title' });
-    const close = button({ class: 'ojx-sr-close', title: 'Закрыть (Esc)', 'aria-label': 'Закрыть', text: '✕' }, closeResults);
-    const panel = el(
-      'div',
-      { class: 'ojx-sr-panel', role: 'dialog', 'aria-label': 'Результаты поиска' },
-      el('div', { class: 'ojx-sr-head' }, title, close),
-      grid,
-      el('div', { class: 'ojx-sr-foot' }, status, more)
-    );
-    const layer = el('div', { class: 'ojx-sr', hidden: true }, panel);
-    layer.addEventListener('mousedown', (e) => {
-      if (e.target === layer) closeResults();
-    });
-    searchUi = { input, layer, grid, status, more, title };
+    const head = el('div', { class: 'ojx-sr-head' }, title);
+    const foot = el('div', { class: 'ojx-sr-foot' }, status, more);
+    searchUi = { input, grid, status, more, title, layer: null, results: null };
+
+    if (inline) {
+      searchUi.results = el('section', { class: 'ojx-home-results', hidden: true, 'aria-label': 'Результаты поиска' }, head, grid, foot);
+    } else {
+      head.append(button({ class: 'ojx-sr-close', title: 'Закрыть (Esc)', 'aria-label': 'Закрыть', text: '✕' }, closeResults));
+      const panel = el('div', { class: 'ojx-sr-panel', role: 'dialog', 'aria-label': 'Результаты поиска' }, head, grid, foot);
+      const layer = el('div', { class: 'ojx-sr', hidden: true }, panel);
+      layer.addEventListener('mousedown', (e) => {
+        if (e.target === layer) closeResults();
+      });
+      searchUi.layer = layer;
+      // Вернулись в поле с тем же запросом — показываем уже найденное.
+      input.addEventListener('focus', () => {
+        if (search.shown && input.value.trim() === search.query) openResults();
+      });
+    }
 
     document.addEventListener(
       'keydown',
       (e) => {
-        if (e.key === 'Escape' && !layer.hidden) {
+        if (e.key === 'Escape' && searchUi.layer && !searchUi.layer.hidden) {
           e.stopPropagation();
           closeResults();
           return;
@@ -445,14 +476,19 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
 
   function openResults() {
     if (!searchUi) return;
-    searchUi.layer.hidden = false;
-    root.classList.add('ojx-sr-open');
+    if (searchUi.layer) {
+      searchUi.layer.hidden = false;
+      root.classList.add('ojx-sr-open');
+    } else {
+      searchUi.results.hidden = false;
+      root.classList.add('ojx-has-results');
+    }
   }
 
   // Фокус уходит на body: иначе ajsubs-episode-nav считает его «чужим»
   // (focusIsOurs) и не переносит в плеер после Ctrl+←/→.
   function closeResults() {
-    if (!searchUi) return;
+    if (!searchUi || !searchUi.layer) return;
     searchUi.layer.hidden = true;
     root.classList.remove('ojx-sr-open');
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
@@ -487,6 +523,7 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
         return {
           href: new URL(link.getAttribute('href'), location.href).href,
           title: fixMixed(m ? m[1] : raw),
+          year,
           meta: [year, kind, amount].filter(Boolean).join(' · '),
           picture: picture ? document.importNode(picture, true) : null,
         };
@@ -510,25 +547,29 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
     } catch (e) {
       /* битая ссылка */
     }
+    const match = !!search.year && item.year === search.year;
     return el(
       'a',
-      { class: 'ojx-card' + (current ? ' is-current' : ''), href: item.href, title: item.title },
-      el('div', { class: 'ojx-card-img' }, item.picture),
+      { class: 'ojx-card' + (current ? ' is-current' : '') + (match ? ' is-match' : ''), href: item.href, title: item.title },
+      el('div', { class: 'ojx-card-img' }, item.picture, match && el('span', { class: 'ojx-card-flag', text: 'AniList · ' + item.year })),
       el('div', { class: 'ojx-card-t', text: item.title }),
       item.meta && el('div', { class: 'ojx-card-m', text: item.meta })
     );
   }
 
-  async function runSearch(query, page) {
-    if (!searchUi) return;
+  // Возвращает число найденных на странице (null — запрос отменён/упал).
+  async function runSearch(query, page, opts) {
+    if (!searchUi) return null;
     const ui = searchUi;
     if (search.controller) search.controller.abort();
     const controller = new AbortController();
     search.controller = controller;
     if (page === 1) {
-      Object.assign(search, { query, page: 0, total: 0, shown: 0 });
+      const o = opts || {};
+      Object.assign(search, { query, page: 0, total: 0, shown: 0, year: o.year || '', note: o.note || '' });
       ui.grid.replaceChildren();
       ui.title.textContent = '«' + query + '»';
+      ui.input.value = query;
     }
     ui.more.hidden = true;
     ui.status.textContent = 'Ищу…';
@@ -546,20 +587,125 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
       const res = await fetch('/index.php?do=search', { method: 'POST', body, credentials: 'same-origin', signal: controller.signal });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const { total, items } = parseResults(await res.text());
-      if (controller !== search.controller) return;
+      if (controller !== search.controller) return null;
       search.page = page;
       search.total = Math.max(total, search.shown + items.length);
       search.shown += items.length;
       ui.grid.append(...items.map(resultCard));
-      ui.title.textContent = '«' + query + '» · ' + search.total;
+      ui.title.textContent = '«' + query + '» · ' + search.total + (search.note ? ' · ' + search.note : '');
       ui.status.textContent = search.shown ? (search.shown < search.total ? 'Показано ' + search.shown + ' из ' + search.total : '') : 'Ничего не найдено';
       ui.more.hidden = !(items.length && search.shown < search.total);
+      return items.length;
     } catch (e) {
-      if (e.name === 'AbortError') return;
+      if (e.name === 'AbortError') return null;
       ui.status.textContent = 'Поиск не удался: ' + e.message;
+      return null;
     } finally {
       if (controller === search.controller) search.controller = null;
     }
+  }
+
+  // ==================== Главная: поиск «как Google» ====================
+  //
+  // otakujoy.fun/ — только логотип и поле поиска (лента сайта — /index.php,
+  // скрипт её не трогает). Запрос живёт в hash, чтобы на него можно было
+  // сослаться (кнопка AJ на AniList — anilist-aj-button.user.js):
+  //   #q=<запрос>              — обычный поиск;
+  //   #al=<id AniList>&t=<название> — названия берём из GraphQL AniList
+  //     (graphql.anilist.co отвечает с CORS) и ищем по очереди: ромадзи,
+  //     английское, t, они же до двоеточия — пока что-то не найдётся. Поиск
+  //     AJ находит и по ромадзи, и по английскому (Tetsunabe no Jan / Iron
+  //     Wok Jan → «Железный котелок Жана!»). Карточки того же года, что у
+  //     тайтла на AniList, подсвечиваются.
+
+  function setHash(params) {
+    history.replaceState(null, '', '#' + new URLSearchParams(params).toString());
+  }
+
+  function cleanQuery(text) {
+    return String(text || '')
+      .replace(/[!?！？。、「」『』"“”]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  async function aniListTitles(id) {
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        query: 'query($id:Int){Media(id:$id){title{romaji english} seasonYear startDate{year}}}',
+        variables: { id: Number(id) },
+      }),
+    });
+    if (!res.ok) throw new Error('AniList HTTP ' + res.status);
+    const media = ((await res.json()).data || {}).Media;
+    if (!media) throw new Error('AniList: нет тайтла ' + id);
+    return {
+      titles: [media.title.romaji, media.title.english],
+      year: String(media.seasonYear || (media.startDate && media.startDate.year) || ''),
+    };
+  }
+
+  let hashRun = 0;
+
+  async function applyHash() {
+    const params = new URLSearchParams(location.hash.slice(1));
+    const run = ++hashRun;
+    const q = params.get('q');
+    if (q) {
+      runSearch(q, 1);
+      return;
+    }
+    const al = params.get('al');
+    if (!al || !/^\d+$/.test(al)) return;
+    const fallback = params.get('t') || '';
+    let titles = [fallback];
+    let year = '';
+    searchUi.input.value = fallback;
+    searchUi.title.textContent = fallback ? '«' + fallback + '»' : 'AniList ' + al;
+    searchUi.status.textContent = 'Беру названия с AniList…';
+    openResults();
+    try {
+      ({ titles, year } = await aniListTitles(al));
+      titles.push(fallback);
+    } catch (e) {
+      /* без AniList — ищем по названию из ссылки */
+    }
+    if (run !== hashRun) return;
+    const full = titles.map(cleanQuery).filter(Boolean);
+    const short = full.filter((t) => t.includes(':')).map((t) => t.split(':')[0].trim()).filter((t) => t.length >= 3);
+    const candidates = [...new Set([...full, ...short])];
+    for (const query of candidates) {
+      const found = await runSearch(query, 1, { year, note: 'с AniList' });
+      if (run !== hashRun || found === null) return;
+      if (found > 0) return;
+    }
+    if (candidates.length > 1) searchUi.status.textContent = 'Ничего не найдено. Пробовал: ' + candidates.join(' / ');
+  }
+
+  function buildHome() {
+    if (!document.body) return false;
+    const form = buildSearch('inline');
+    const logo = el(
+      'a',
+      { class: 'ojx-logo', href: '/', title: 'otakujoy.fun' },
+      el('span', { class: 'ojx-logo-a', text: 'A' }),
+      el('span', { class: 'ojx-logo-j', text: 'J' })
+    );
+    const links = el(
+      'nav',
+      { class: 'ojx-home-links' },
+      el('a', { href: '/index.php', text: 'Лента сайта' }),
+      el('a', { href: 'https://anilist.co/', text: 'AniList' })
+    );
+    toastNode = el('div', { class: 'ojx-toast', role: 'status' });
+    const shell = el('div', { id: 'ojx', class: 'ojx-home-page' }, el('section', { class: 'ojx-home-hero' }, logo, form, links), searchUi.results, toastNode);
+    document.body.prepend(shell);
+    window.addEventListener('hashchange', applyHash);
+    if (location.hash.length > 1) applyHash();
+    else searchUi.input.focus();
+    return true;
   }
 
   function buildPoster(story) {
@@ -726,7 +872,7 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
     const watch = el('section', { class: 'ojx-watch ojx-loading' }, head);
     toastNode = el('div', { class: 'ojx-toast', role: 'status' });
     const shell = el('div', { id: 'ojx' }, buildBar(), buildHero(story), watch, toastNode);
-    if (searchUi) shell.append(searchUi.layer);
+    if (searchUi && searchUi.layer) shell.append(searchUi.layer);
 
     // Age-gate (на animejoy был #modal) не прячем вместе со страницей.
     const modal = document.getElementById('modal');
@@ -747,7 +893,7 @@ html.ojx.ojx-sr-open body { overflow: hidden; }
   function start() {
     let ok = false;
     try {
-      ok = build();
+      ok = IS_HOME ? buildHome() : build();
     } catch (e) {
       console.error('[ojx]', e);
       if (ajaxOrigin && ajaxOrigin.parent.isConnected) {
