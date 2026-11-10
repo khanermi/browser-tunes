@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AnimeJoy Title UI
 // @namespace    local
-// @version      1.0
-// @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
+// @version      1.1
+// @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
 // @match        *://otakujoy.fun/*
 // @match        *://animejoy.ru/*
 // @run-at       document-start
@@ -35,6 +35,8 @@
   const STYLES = `
 html.ojx, html.ojx body { background: #0d0f14 !important; }
 html.ojx body { margin: 0 !important; min-width: 0 !important; }
+/* место под полосу прокрутки — не прыгать при открытии поиска (overflow: hidden) */
+html.ojx { scrollbar-gutter: stable; }
 html.ojx body > .page { display: none !important; }
 
 #ojx {
@@ -59,6 +61,33 @@ html.ojx body > .page { display: none !important; }
 #ojx .ojx-sep { color: var(--faint); }
 #ojx .ojx-btn { appearance: none; flex: none; padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted); font-size: 12.5px; white-space: nowrap; cursor: pointer; transition: color .12s, background .12s; }
 #ojx .ojx-btn:hover { color: var(--text); background: var(--surface); }
+
+#ojx .ojx-search { position: relative; flex: 1 1 360px; max-width: 460px; margin: 0 auto; }
+#ojx .ojx-search-input { width: 100%; height: 32px; padding: 0 34px 0 14px; border: 1px solid var(--border); border-radius: 999px; outline: none; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; transition: border-color .12s, background .12s; }
+#ojx .ojx-search-input::placeholder { color: var(--faint); }
+#ojx .ojx-search-input:focus { border-color: var(--accent); background: var(--surface-2); }
+#ojx .ojx-search-input::-webkit-search-cancel-button { display: none; }
+#ojx .ojx-search kbd { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); padding: 1px 6px; border: 1px solid var(--border); border-radius: 5px; color: var(--faint); font-size: 11px; line-height: 1.4; pointer-events: none; }
+#ojx .ojx-search-input:focus + kbd { display: none; }
+
+html.ojx.ojx-sr-open body { overflow: hidden; }
+#ojx .ojx-sr { position: fixed; inset: 0; z-index: 900; display: flex; justify-content: center; align-items: flex-start; padding: 56px 16px 24px; background: rgba(5, 6, 10, .72); }
+#ojx .ojx-sr[hidden] { display: none; }
+#ojx .ojx-sr-panel { display: flex; flex-direction: column; width: min(1180px, 100%); max-height: 100%; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 24px 64px rgba(0, 0, 0, .55); }
+#ojx .ojx-sr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 10px 20px; }
+#ojx .ojx-sr-title { font-size: 15px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#ojx .ojx-sr-close { appearance: none; flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 14px; cursor: pointer; }
+#ojx .ojx-sr-close:hover { background: var(--surface-2); color: var(--text); }
+#ojx .ojx-sr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px; padding: 6px 20px 4px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent; }
+#ojx .ojx-sr-foot { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 52px; padding: 10px 20px 14px; color: var(--muted); font-size: 13px; }
+#ojx .ojx-sr-status:empty { display: none; }
+#ojx .ojx-card { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 6px; border-radius: 12px; transition: background .12s; }
+#ojx .ojx-card:hover { background: var(--surface-2); }
+#ojx .ojx-card.is-current { box-shadow: inset 0 0 0 1px var(--accent); }
+#ojx .ojx-card-img { aspect-ratio: 250 / 354; margin-bottom: 4px; overflow: hidden; border-radius: 8px; background: var(--surface-2); }
+#ojx .ojx-card-img picture, #ojx .ojx-card-img img { display: block; width: 100%; height: 100%; object-fit: cover; }
+#ojx .ojx-card-t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+#ojx .ojx-card-m { font-size: 12px; color: var(--muted); }
 
 /* Шапка: постер | названия | части. Уже 1200px — части под названиями.
    Высота шапки ≈ высоте постера, чтобы плеер ниже влезал в окно целиком. */
@@ -171,6 +200,10 @@ html.ojx body > .page { display: none !important; }
   #ojx .playlists-videos { contain: none; max-height: 46vh; }
 }
 @media (max-width: 640px) {
+  #ojx .ojx-bar { flex-wrap: wrap; padding-bottom: 6px; }
+  #ojx .ojx-search { order: 3; flex-basis: 100%; max-width: none; }
+  #ojx .ojx-sr { padding: 8px; }
+  #ojx .ojx-sr-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); padding: 4px 12px; }
   #ojx .ojx-hero { grid-template-columns: 96px minmax(0, 1fr); gap: 14px; }
   #ojx .ojx-title { font-size: 20px; }
   #ojx .ojx-part-meta { display: none; }
@@ -327,7 +360,206 @@ html.ojx body > .page { display: none !important; }
         location.reload();
       }
     );
-    return el('header', { class: 'ojx-bar' }, crumbs, classic);
+    return el('header', { class: 'ojx-bar' }, crumbs, buildSearch(), classic);
+  }
+
+  // ==================== Поиск ====================
+  //
+  // Тот же запрос, что шлёт форма сайта #fullsearch: POST /index.php?do=search
+  // (do, subaction=search, story, search_start = номер страницы, result_from =
+  // (N-1)*10+1), ответ — обычная HTML-страница, по 10 на страницу. Результаты —
+  // article.shortstory: .ntitle a («Название [21 из 21]» + ссылка), picture
+  // (постер), .blkdesc p с .timpact «Количество серий:» («ТВ (21 эп.), 25 мин.»,
+  // «полнометражный фильм, 120 мин.»), «Дата выпуска:» («c 05.10.2025»),
+  // «Сезон:» («осень-2025»). Всего найдено — .search_result_num «найдено 12
+  // ответов». Ничего не нашлось — просто ни одной статьи, без сообщения.
+  const SEARCH_PAGE_SIZE = 10;
+  const search = { query: '', page: 0, total: 0, shown: 0, controller: null };
+  let searchUi = null;
+
+  function buildSearch() {
+    const input = el('input', {
+      type: 'search',
+      class: 'ojx-search-input',
+      placeholder: 'Поиск по сайту',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      'aria-label': 'Поиск по сайту',
+    });
+    const form = el('form', { class: 'ojx-search', role: 'search' }, input, el('kbd', { text: '/' }));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const query = input.value.trim();
+      if (!query) return;
+      if (query === search.query && search.shown) openResults();
+      else runSearch(query, 1);
+    });
+    // Вернулись в поле с тем же запросом — показываем уже найденное.
+    input.addEventListener('focus', () => {
+      if (search.shown && input.value.trim() === search.query) openResults();
+    });
+
+    const grid = el('div', { class: 'ojx-sr-grid' });
+    const status = el('div', { class: 'ojx-sr-status' });
+    const more = button({ class: 'ojx-btn ojx-sr-more', text: 'Показать ещё', hidden: true }, () => runSearch(search.query, search.page + 1));
+    const title = el('div', { class: 'ojx-sr-title' });
+    const close = button({ class: 'ojx-sr-close', title: 'Закрыть (Esc)', 'aria-label': 'Закрыть', text: '✕' }, closeResults);
+    const panel = el(
+      'div',
+      { class: 'ojx-sr-panel', role: 'dialog', 'aria-label': 'Результаты поиска' },
+      el('div', { class: 'ojx-sr-head' }, title, close),
+      grid,
+      el('div', { class: 'ojx-sr-foot' }, status, more)
+    );
+    const layer = el('div', { class: 'ojx-sr', hidden: true }, panel);
+    layer.addEventListener('mousedown', (e) => {
+      if (e.target === layer) closeResults();
+    });
+    searchUi = { input, layer, grid, status, more, title };
+
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key === 'Escape' && !layer.hidden) {
+          e.stopPropagation();
+          closeResults();
+          return;
+        }
+        // «/» — к поиску, если не печатаем в другом поле (code — та же клавиша
+        // и на русской раскладке, где она «.»)
+        const slash = e.key === '/' || (e.code === 'Slash' && !e.shiftKey);
+        if (slash && !e.ctrlKey && !e.altKey && !e.metaKey && !isTyping(e.target)) {
+          e.preventDefault();
+          input.focus();
+          input.select();
+        }
+      },
+      true
+    );
+    return form;
+  }
+
+  function isTyping(target) {
+    return !!target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+  }
+
+  function openResults() {
+    if (!searchUi) return;
+    searchUi.layer.hidden = false;
+    root.classList.add('ojx-sr-open');
+  }
+
+  // Фокус уходит на body: иначе ajsubs-episode-nav считает его «чужим»
+  // (focusIsOurs) и не переносит в плеер после Ctrl+←/→.
+  function closeResults() {
+    if (!searchUi) return;
+    searchUi.layer.hidden = true;
+    root.classList.remove('ojx-sr-open');
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  }
+
+  function searchField(article, name) {
+    const p = [...article.querySelectorAll('.blkdesc p')].find((x) => cleanText(x.querySelector('.timpact')).startsWith(name));
+    return p ? cleanText(p).slice(name.length).trim() : '';
+  }
+
+  function parseResults(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const num = cleanText(doc.querySelector('.search_result_num'));
+    const total = Number((num.match(/найдено\s+(\d+)/i) || [])[1] || 0);
+    const items = [...doc.querySelectorAll('article.shortstory')]
+      .map((article) => {
+        const link = article.querySelector('.ntitle a[href]');
+        if (!link) return null;
+        const raw = cleanText(link);
+        const m = raw.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
+        // «[08 из 08]» → «8 из 8»
+        const badge = m ? m[2].replace(/\b0+(\d)/g, '$1') : '';
+        // «ТВ (21 эп.), 25 мин.» / «полнометражный фильм, 120 мин.» / «OVA (2 эп.), 30 мин.»
+        const count = searchField(article, 'Количество серий:');
+        const [first = '', second = ''] = count.split(',').map((s) => s.trim());
+        const kind = first.replace(/\s*\(.*\)\s*/, '').replace(/^полнометражный\s+/i, '');
+        const eps = (first.match(/\((\d+)\s*эп/) || [])[1];
+        const isFilm = /фильм/i.test(kind);
+        const amount = badge || (eps ? eps + ' эп.' : isFilm ? second : '');
+        const year = ((searchField(article, 'Дата выпуска:') + ' ' + searchField(article, 'Сезон:')).match(/(?:19|20)\d\d/) || [])[0] || '';
+        const picture = article.querySelector('.text picture') || article.querySelector('.text img');
+        return {
+          href: new URL(link.getAttribute('href'), location.href).href,
+          title: fixMixed(m ? m[1] : raw),
+          meta: [year, kind, amount].filter(Boolean).join(' · '),
+          picture: picture ? document.importNode(picture, true) : null,
+        };
+      })
+      .filter(Boolean);
+    return { total: total || items.length, items };
+  }
+
+  function resultCard(item) {
+    const img = item.picture && (item.picture.tagName === 'IMG' ? item.picture : item.picture.querySelector('img'));
+    if (img) {
+      img.removeAttribute('style');
+      img.removeAttribute('class');
+      img.removeAttribute('title');
+      img.alt = '';
+      img.loading = 'lazy';
+    }
+    let current = false;
+    try {
+      current = new URL(item.href).pathname === location.pathname;
+    } catch (e) {
+      /* битая ссылка */
+    }
+    return el(
+      'a',
+      { class: 'ojx-card' + (current ? ' is-current' : ''), href: item.href, title: item.title },
+      el('div', { class: 'ojx-card-img' }, item.picture),
+      el('div', { class: 'ojx-card-t', text: item.title }),
+      item.meta && el('div', { class: 'ojx-card-m', text: item.meta })
+    );
+  }
+
+  async function runSearch(query, page) {
+    if (!searchUi) return;
+    const ui = searchUi;
+    if (search.controller) search.controller.abort();
+    const controller = new AbortController();
+    search.controller = controller;
+    if (page === 1) {
+      Object.assign(search, { query, page: 0, total: 0, shown: 0 });
+      ui.grid.replaceChildren();
+      ui.title.textContent = '«' + query + '»';
+    }
+    ui.more.hidden = true;
+    ui.status.textContent = 'Ищу…';
+    openResults();
+
+    try {
+      const body = new URLSearchParams({
+        do: 'search',
+        subaction: 'search',
+        search_start: String(page),
+        full_search: '0',
+        result_from: String((page - 1) * SEARCH_PAGE_SIZE + 1),
+        story: query,
+      });
+      const res = await fetch('/index.php?do=search', { method: 'POST', body, credentials: 'same-origin', signal: controller.signal });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const { total, items } = parseResults(await res.text());
+      if (controller !== search.controller) return;
+      search.page = page;
+      search.total = Math.max(total, search.shown + items.length);
+      search.shown += items.length;
+      ui.grid.append(...items.map(resultCard));
+      ui.title.textContent = '«' + query + '» · ' + search.total;
+      ui.status.textContent = search.shown ? (search.shown < search.total ? 'Показано ' + search.shown + ' из ' + search.total : '') : 'Ничего не найдено';
+      ui.more.hidden = !(items.length && search.shown < search.total);
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      ui.status.textContent = 'Поиск не удался: ' + e.message;
+    } finally {
+      if (controller === search.controller) search.controller = null;
+    }
   }
 
   function buildPoster(story) {
@@ -494,6 +726,7 @@ html.ojx body > .page { display: none !important; }
     const watch = el('section', { class: 'ojx-watch ojx-loading' }, head);
     toastNode = el('div', { class: 'ojx-toast', role: 'status' });
     const shell = el('div', { id: 'ojx' }, buildBar(), buildHero(story), watch, toastNode);
+    if (searchUi) shell.append(searchUi.layer);
 
     // Age-gate (на animejoy был #modal) не прячем вместе со страницей.
     const modal = document.getElementById('modal');
