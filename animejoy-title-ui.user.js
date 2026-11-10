@@ -1,0 +1,747 @@
+// ==UserScript==
+// @name         AnimeJoy Title UI
+// @namespace    local
+// @version      1.0
+// @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
+// @match        *://otakujoy.fun/*
+// @match        *://animejoy.ru/*
+// @run-at       document-start
+// @grant        none
+// @updateURL    https://raw.githubusercontent.com/khanermi/browser-tunes/main/animejoy-title-ui.user.js
+// @downloadURL  https://raw.githubusercontent.com/khanermi/browser-tunes/main/animejoy-title-ui.user.js
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  if (window.top !== window) return;
+  // Страница тайтла DLE: /<раздел>/<id>-<slug>.html (tv-serialy, anime-films…).
+  // Новости выглядят так же — их отсеивает проверка на .playlists-ajax в build().
+  if (!/^\/[^/]+\/\d+-[^/]+\.html$/.test(location.pathname)) return;
+
+  const OFF_KEY = 'ojx-off'; // '1' — пользователь вернул обычный вид сайта
+
+  // ==================== Стили ====================
+  //
+  // Сайт держит всё в body > .page — её прячем, свой интерфейс (#ojx) кладём
+  // рядом. Плейлист сайта (.playlists-ajax) не копируется, а переносится в #ojx
+  // целиком: его обработчики делегированы на body, а ajsubs-episode-nav ищет
+  // те же .playlists-videos li.visible / .playlists-iframe.
+  //
+  // Предкам .playlists-iframe нельзя transform/filter/backdrop-filter/contain:
+  // псевдо-fullscreen ajsubs-episode-nav ставит ему position: fixed, и такие
+  // предки стали бы его containing block. Оформление плеера — только в
+  // :not([style*="fixed"]), чтобы не спорить с инлайн-стилями режима F9.
+  const STYLES = `
+html.ojx, html.ojx body { background: #0d0f14 !important; }
+html.ojx body { margin: 0 !important; min-width: 0 !important; }
+html.ojx body > .page { display: none !important; }
+
+#ojx {
+  --bg: #0d0f14; --surface: #151821; --surface-2: #1c202b; --surface-3: #272c39;
+  --border: #252a36; --text: #e8eaf0; --muted: #98a0b2; --faint: #666e80;
+  --accent: #8b6cff; --accent-strong: #7350ff; --accent-soft: rgba(139, 108, 255, .15);
+  --ok: #3fcf8e; --radius: 12px; --side: 300px;
+  box-sizing: border-box; max-width: 1480px; margin: 0 auto; padding: 6px 24px 48px;
+  color: var(--text); font: 400 14px/1.45 "Golos Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased; text-align: left;
+}
+#ojx *, #ojx *::before, #ojx *::after { box-sizing: border-box; }
+#ojx a { color: inherit; text-decoration: none; }
+#ojx button { font: inherit; color: inherit; }
+#ojx button:focus-visible, #ojx a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#ojx .ojx-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; margin-bottom: 4px; }
+#ojx .ojx-crumbs { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 13px; color: var(--muted); }
+#ojx .ojx-crumbs a { color: var(--muted); transition: color .12s; }
+#ojx .ojx-crumbs a:hover { color: var(--text); }
+#ojx .ojx-crumbs .ojx-home { color: var(--text); font-weight: 600; }
+#ojx .ojx-sep { color: var(--faint); }
+#ojx .ojx-btn { appearance: none; flex: none; padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted); font-size: 12.5px; white-space: nowrap; cursor: pointer; transition: color .12s, background .12s; }
+#ojx .ojx-btn:hover { color: var(--text); background: var(--surface); }
+
+/* Шапка: постер | названия | части. Уже 1200px — части под названиями.
+   Высота шапки ≈ высоте постера, чтобы плеер ниже влезал в окно целиком. */
+#ojx .ojx-hero { display: grid; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 12px 22px; align-items: start; margin-bottom: 16px; }
+#ojx .ojx-hero.ojx-noposter { grid-template-columns: 0 minmax(0, 1fr); }
+#ojx .ojx-poster { grid-column: 1; grid-row: 1 / span 2; }
+#ojx .ojx-poster picture { display: block; }
+#ojx .ojx-poster img { display: block; width: 100%; height: auto; aspect-ratio: 250 / 354; object-fit: cover; border-radius: 10px; background: var(--surface); box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .05); }
+#ojx .ojx-info { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+#ojx .ojx-titlerow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+#ojx .ojx-title { margin: 0; font-size: 26px; font-weight: 700; line-height: 1.2; letter-spacing: -.01em; color: var(--text); }
+#ojx .ojx-badge { flex: none; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: #cdc1ff; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+#ojx .ojx-copy { appearance: none; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: 6px; background: none; text-align: left; cursor: copy; transition: background .12s; }
+#ojx .ojx-copy:hover { background: rgba(255, 255, 255, .06); }
+#ojx .ojx-romaji { align-self: flex-start; font-size: 15.5px; color: #c9cedb; }
+#ojx .ojx-alt { align-self: flex-start; font-size: 13.5px; color: var(--muted); }
+#ojx .ojx-upd { margin-top: 4px; font-size: 12.5px; color: var(--faint); }
+
+#ojx .ojx-parts { grid-column: 2; grid-row: 2; min-width: 0; }
+#ojx .ojx-sect { display: flex; align-items: center; gap: 8px; margin: 0 0 4px 10px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+#ojx .ojx-parts-list { display: flex; flex-direction: column; gap: 1px; max-width: 920px; margin: 0; padding: 0; list-style: none; }
+#ojx .ojx-part { margin: 0; padding: 0; list-style: none; }
+#ojx .ojx-part > a, #ojx .ojx-part > span { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 4px 10px; border-radius: 8px; transition: background .12s; }
+#ojx .ojx-part > a:hover { background: var(--surface-2); }
+#ojx .ojx-part-n { font-size: 12px; text-align: right; color: var(--faint); font-variant-numeric: tabular-nums; }
+#ojx .ojx-part-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#ojx .ojx-dim { color: var(--muted); }
+#ojx .ojx-part-meta { font-size: 12px; white-space: nowrap; color: var(--muted); }
+#ojx .ojx-part.is-current > span { background: rgba(139, 108, 255, .2); box-shadow: inset 2px 0 0 var(--accent); color: #fff; }
+#ojx .ojx-part.is-current .ojx-part-n { color: var(--accent); }
+#ojx .ojx-part.is-current .ojx-dim, #ojx .ojx-part.is-current .ojx-part-meta { color: #c3c8d6; }
+#ojx .ojx-part.is-missing > span { opacity: .5; }
+#ojx .ojx-parts-list:not(.ojx-open) > .ojx-fold { display: none; }
+#ojx .ojx-more { appearance: none; margin-top: 2px; padding: 3px 10px; border: 0; border-radius: 8px; background: none; color: var(--accent); font-size: 12.5px; cursor: pointer; }
+#ojx .ojx-more:hover { background: var(--surface-2); }
+@media (min-width: 1200px) {
+  #ojx .ojx-hero.ojx-has-parts { grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1.3fr); }
+  #ojx .ojx-hero.ojx-has-parts.ojx-noposter { grid-template-columns: 0 minmax(0, 1fr) minmax(0, 1.3fr); }
+  #ojx .ojx-hero .ojx-parts { grid-column: 3; grid-row: 1 / span 2; }
+}
+
+/* Просмотр: плеер слева, справа одна панель — плееры сайта, «Серии», сетка.
+   .playlists-ajax/.playlists-player — display: contents, их дети (списки,
+   iframe, серии) становятся ячейками этого грида без переноса из DOM сайта. */
+#ojx .ojx-watch { display: grid; grid-template-columns: minmax(0, 1fr) var(--side); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "frame lists" "frame ehead" "frame eps"; column-gap: 12px; }
+#ojx .ojx-watch .playlists-ajax, #ojx .ojx-watch .playlists-player { display: contents; }
+#ojx .ojx-watch.ojx-loading::before { content: 'Загрузка плеера…'; grid-area: frame; display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9; max-height: calc(100vh - 24px); border-radius: var(--radius); background: #000; color: var(--faint); }
+#ojx .ojx-watch.ojx-loading .ojx-ehead { visibility: hidden; }
+
+#ojx .playlists-items { position: relative; overflow: visible !important; }
+#ojx .playlists-items ul { width: auto !important; margin: 0; padding: 0; list-style: none; transform: none !important; }
+#ojx .playlists-prev, #ojx .playlists-next { display: none !important; }
+
+#ojx .playlists-lists { grid-area: lists; display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--border); border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0; background: var(--surface); }
+#ojx .playlists-lists ul { display: flex !important; flex-wrap: wrap; gap: 6px; }
+#ojx .playlists-lists .playlists-items li { display: none !important; }
+#ojx .playlists-lists .playlists-items li.visible { display: inline-flex !important; align-items: center; width: auto !important; height: 28px; margin: 0; padding: 0 11px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-family: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; cursor: pointer; user-select: none; transition: background .12s, color .12s; }
+#ojx .playlists-lists .playlists-items li.visible:hover { background: var(--surface-3); color: var(--text); }
+#ojx .playlists-lists .playlists-items li.visible.active { background: var(--accent-strong); color: #fff; font-weight: 600; }
+#ojx .playlists-lists .playlists-items + .playlists-items li.visible { height: 24px; padding: 0 9px; font-size: 12px; }
+#ojx .playlists-lists .playlists-items + .playlists-items li.visible.active { background: var(--accent-soft); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+
+#ojx .playlists-iframe { grid-area: frame; align-self: start; margin: 0; background: #000; }
+#ojx .playlists-iframe:not([style*="fixed"]) { height: auto; aspect-ratio: 16 / 9; max-height: calc(100vh - 24px); border-radius: var(--radius); overflow: hidden; box-shadow: 0 0 0 1px var(--border); }
+#ojx .playlists-iframe iframe { display: block; width: 100%; height: 100%; border: 0; }
+
+#ojx .ojx-ehead { grid-area: ehead; padding: 10px 12px 8px; border: 1px solid var(--border); border-bottom: 0; background: var(--surface); }
+#ojx .ojx-watch:not(:has(.playlists-lists)) .ojx-ehead { border-radius: var(--radius) var(--radius) 0 0; }
+#ojx .ojx-ehead-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#ojx .ojx-ehead-title { font-weight: 600; }
+#ojx .ojx-count { padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+#ojx .ojx-now { margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; color: var(--muted); }
+#ojx .ojx-now:not(:empty)::before { content: '▶ '; color: var(--accent); }
+#ojx .ojx-enote { margin-top: 6px; font-size: 12px; color: var(--muted); }
+
+/* contain: size — сетка серий не растягивает грид, а занимает остаток высоты плеера */
+#ojx .playlists-videos { grid-area: eps; contain: size; overflow-y: auto; overscroll-behavior: contain; padding: 4px 10px 10px; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); background: var(--surface); scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent; }
+#ojx .playlists-videos ul { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; }
+#ojx .playlists-videos .playlists-items li { display: none !important; }
+#ojx .playlists-videos .playlists-items li.visible { display: flex !important; align-items: center; justify-content: center; position: relative; width: auto !important; height: 40px; margin: 0; padding: 0 6px; overflow: hidden; border-radius: 8px; background: var(--surface-2); color: var(--text); font-family: inherit; font-size: 0; font-weight: 500; line-height: 1; text-align: center; cursor: pointer; user-select: none; transition: background .12s, color .12s, box-shadow .12s; }
+#ojx .playlists-videos .playlists-items li.visible::before { content: attr(data-ojx-label); max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-variant-numeric: tabular-nums; }
+#ojx .playlists-videos .playlists-items li.visible:hover { background: var(--surface-3); }
+#ojx .playlists-videos .playlists-items li.visible.active { background: var(--accent-strong); color: #fff; font-weight: 700; box-shadow: 0 4px 14px rgba(115, 80, 255, .35); }
+#ojx .playlists-videos .playlists-items li.visible:has(.playlists-view.watched):not(.active) { color: var(--muted); }
+#ojx .playlists-videos li[data-ojx-span="2"] { grid-column-end: span 2; }
+#ojx .playlists-videos li[data-ojx-span="3"] { grid-column-end: span 3; }
+#ojx .playlists-videos li[data-ojx-span="full"] { grid-column: 1 / -1; }
+#ojx .playlists-videos li[data-ojx-br] { grid-column-start: 1; }
+#ojx .playlists-videos .playlists-view { position: absolute; top: 4px; right: 4px; bottom: auto; left: auto; width: 14px; height: 14px; border-radius: 50%; background: none !important; box-shadow: inset 0 0 0 1.5px var(--faint); opacity: 0; cursor: pointer; transition: opacity .12s, box-shadow .12s; }
+#ojx .playlists-videos .playlists-view::after { content: ''; position: absolute; inset: -5px; }
+#ojx .playlists-videos li:hover .playlists-view { opacity: 1; }
+#ojx .playlists-videos .playlists-view:hover { box-shadow: inset 0 0 0 1.5px var(--text); }
+#ojx .playlists-videos .playlists-view.watched { opacity: 1; box-shadow: none; background: var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6.3l2.2 2.2 4.6-4.9' fill='none' stroke='%230d0f14' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 10px no-repeat !important; }
+
+/* У каждого плеера по одному пункту (фильм) — сетка серий не нужна, справа
+   остаются только плееры. Плеер на всю ширину не влез бы в окно по высоте. */
+#ojx .ojx-watch.ojx-single .ojx-ehead, #ojx .ojx-watch.ojx-single .playlists-videos { display: none !important; }
+@media (min-width: 1001px) {
+  #ojx .ojx-watch.ojx-single .playlists-lists { align-self: start; border-bottom: 1px solid var(--border); border-radius: var(--radius); }
+}
+
+#ojx .ojx-toast { position: fixed; left: 50%; bottom: 24px; z-index: 1000; max-width: calc(100vw - 32px); padding: 8px 14px; border-radius: 999px; background: var(--surface-3); color: var(--text); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 8px 24px rgba(0, 0, 0, .45); opacity: 0; pointer-events: none; transform: translate(-50%, 8px); transition: opacity .15s, transform .15s; }
+#ojx .ojx-toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 1000px) {
+  #ojx { padding: 4px 14px 32px; }
+  #ojx .ojx-watch { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "lists" "frame" "ehead" "eps"; }
+  #ojx .playlists-lists { padding: 0 0 10px; border: 0; background: none; }
+  #ojx .ojx-ehead { margin-top: 14px; border-radius: var(--radius) var(--radius) 0 0; }
+  #ojx .playlists-videos { contain: none; max-height: 46vh; }
+}
+@media (max-width: 640px) {
+  #ojx .ojx-hero { grid-template-columns: 96px minmax(0, 1fr); gap: 14px; }
+  #ojx .ojx-title { font-size: 20px; }
+  #ojx .ojx-part-meta { display: none; }
+}
+`;
+
+  // ==================== Утилиты ====================
+
+  function storageGet(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    } catch (e) {
+      /* хранилище недоступно — переключатель просто не запомнится */
+    }
+  }
+
+  function onReady(fn) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
+    else fn();
+  }
+
+  function el(tag, attrs, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs || {})) {
+      if (value === null || value === undefined || value === false) continue;
+      if (key === 'class') node.className = value;
+      else if (key === 'text') node.textContent = value;
+      else node.setAttribute(key, value === true ? '' : value);
+    }
+    for (const child of children) if (child !== null && child !== undefined && child !== false) node.append(child);
+    return node;
+  }
+
+  // Кнопки не забирают фокус при клике мышью: ajsubs-episode-nav переносит
+  // фокус в плеер, только если он на body (focusIsOurs), — кнопка с фокусом
+  // сломала бы Ctrl+←/→ → Space с геймпада.
+  function button(attrs, onClick) {
+    const node = el('button', Object.assign({ type: 'button' }, attrs));
+    node.addEventListener('mousedown', (e) => e.preventDefault());
+    node.addEventListener('click', onClick);
+    return node;
+  }
+
+  function cleanText(node) {
+    return node ? node.textContent.replace(/\s+/g, ' ').trim() : '';
+  }
+
+  // ---- Подмешанная латиница ----
+  //
+  // Сайт в h1/h2 и списке частей заменяет часть букв двойниками из другого
+  // алфавита: «Rе:Zеrо. Жизнь c нyля в aльтepнaтивнoм миpe» (е/о в Re:Zero —
+  // кириллица, c/y/a/e/p/o в русских словах — латиница). Глазом не видно, но
+  // скопированное название не находится поиском. Для каждого слова решаем
+  // алфавит по однозначным буквам (у которых нет двойника), при ничьей — по
+  // строке целиком, и переводим двойники в этот алфавит.
+  const LAT2CYR = {
+    a: 'а', c: 'с', e: 'е', o: 'о', p: 'р', x: 'х', y: 'у', k: 'к',
+    A: 'А', B: 'В', C: 'С', E: 'Е', H: 'Н', K: 'К', M: 'М', O: 'О', P: 'Р', T: 'Т', X: 'Х', Y: 'У',
+  };
+  const CYR2LAT = Object.fromEntries(Object.entries(LAT2CYR).map(([lat, cyr]) => [cyr, lat]));
+  const LAT = /[A-Za-z]/;
+  const CYR = /[\u0400-\u04FF]/;
+
+  // > 0 — латиница, < 0 — кириллица, 0 — не понять
+  function scriptBias(text) {
+    let bias = 0;
+    for (const ch of text) {
+      if (LAT.test(ch) && !(ch in LAT2CYR)) bias++;
+      else if (CYR.test(ch) && !(ch in CYR2LAT)) bias--;
+    }
+    return bias;
+  }
+
+  function fixMixed(text) {
+    if (!text) return '';
+    const lineBias = scriptBias(text);
+    return text.replace(/[A-Za-z\u0400-\u04FF]+/g, (word) => {
+      const bias = scriptBias(word) || lineBias;
+      if (bias > 0) return word.replace(/[\u0400-\u04FF]/g, (ch) => CYR2LAT[ch] || ch);
+      if (bias < 0) return word.replace(/[A-Za-z]/g, (ch) => LAT2CYR[ch] || ch);
+      return word;
+    });
+  }
+
+  // ==================== Обычный вид ====================
+
+  if (storageGet(OFF_KEY) === '1') {
+    onReady(() => {
+      if (!document.querySelector('article.fullstory .playlists-ajax')) return;
+      const back = el('button', { type: 'button', text: 'Новый вид', title: 'Включить интерфейс AnimeJoy Title UI' });
+      back.style.cssText =
+        'position:fixed;right:16px;bottom:16px;z-index:2147483646;padding:8px 14px;border:0;border-radius:999px;' +
+        'background:#7350ff;color:#fff;font:600 13px/1 "Golos Text",system-ui,sans-serif;cursor:pointer;' +
+        'box-shadow:0 6px 20px rgba(0,0,0,.45)';
+      back.addEventListener('click', () => {
+        storageSet(OFF_KEY, null);
+        location.reload();
+      });
+      document.body.append(back);
+    });
+    return;
+  }
+
+  // ==================== Сборка интерфейса ====================
+
+  let toastNode = null;
+  let toastTimer = null;
+
+  function toast(text) {
+    if (!toastNode) return;
+    toastNode.textContent = text;
+    toastNode.classList.add('is-on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastNode.classList.remove('is-on'), 1600);
+  }
+
+  function copyText(text) {
+    const done = () => toast('Скопировано: ' + text);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, () => toast('Не удалось скопировать'));
+    }
+  }
+
+  function copyable(text, className, tag) {
+    const node = button({ class: 'ojx-copy ' + className, title: 'Скопировать', text }, () => copyText(text));
+    return tag ? el(tag, { class: className }, node) : node;
+  }
+
+  function buildBar() {
+    const crumbs = el('nav', { class: 'ojx-crumbs' }, el('a', { class: 'ojx-home', href: '/', text: location.hostname }));
+    // .speedbar: «otakujoy.fun » TV сериалы » <тайтл>» — берём раздел.
+    const section = [...document.querySelectorAll('.speedbar a[href]')].find((a) => {
+      try {
+        return new URL(a.href).pathname !== '/';
+      } catch (e) {
+        return false;
+      }
+    });
+    if (section) crumbs.append(el('span', { class: 'ojx-sep', text: '/' }), el('a', { href: section.href, text: cleanText(section) }));
+
+    const classic = button(
+      { class: 'ojx-btn', title: 'Вернуть оформление сайта (обратно — кнопкой «Новый вид»)', text: 'Обычный вид' },
+      () => {
+        storageSet(OFF_KEY, '1');
+        location.reload();
+      }
+    );
+    return el('header', { class: 'ojx-bar' }, crumbs, classic);
+  }
+
+  function buildPoster(story) {
+    let node = null;
+    const picture = story.querySelector('.text > picture');
+    if (picture) {
+      node = picture.cloneNode(true);
+    } else {
+      const og = document.querySelector('meta[property="og:image"]');
+      if (og && og.content) node = el('img', { src: og.content });
+    }
+    if (!node) return null;
+    const img = node.tagName === 'IMG' ? node : node.querySelector('img');
+    if (img) {
+      img.removeAttribute('style');
+      img.removeAttribute('class');
+      img.removeAttribute('title');
+      img.alt = '';
+    }
+    return el('div', { class: 'ojx-poster' }, node);
+  }
+
+  // «Синий экзорцист [ТВ-1] - ТВ (25 эп. + спэшлы), адаптация манги, 2011»
+  function splitPart(text) {
+    const at = text.search(/\s[-–—]\s/);
+    const name = at > 0 ? text.slice(0, at).trim() : text;
+    const details = at > 0 ? text.slice(at + 3).trim() : '';
+    const year = (details.match(/(?:^|\D)((?:19|20)\d\d)\s*$/) || [])[1] || '';
+    let kind = details.split(',')[0].trim();
+    if (kind === year) kind = '';
+    kind = kind.replace(/^п\/ф(?=$|[\s(])/, 'фильм'); // \b в JS-регэкспах не видит кириллицу
+    return { name, meta: [kind, year].filter(Boolean).join(' · ') };
+  }
+
+  // Общее начало названий (по словам) — его рисуем приглушённо, чтобы глаз
+  // цеплялся за отличие: [ТВ-1] / (фильм) / [ТВ-2]…
+  function commonPrefix(names) {
+    if (names.length < 2) return '';
+    const words = names.map((n) => n.split(' '));
+    let k = 0;
+    while (words.every((w) => k < w.length && w[k] === words[0][k])) k++;
+    return words[0].slice(0, k).join(' ');
+  }
+
+  const PARTS_LIMIT = 8;
+  const PARTS_WINDOW = 7;
+
+  function buildParts(story) {
+    // DLE-спойлер «Это аниме состоит из:» — заголовок .title_spoiler, тело
+    // .text_spoiler с id из ShowOrHide('…'), внутри <ol> со ссылками; текущая
+    // часть — li.rfa. Частей, которых нет на сайте, бывают без ссылки.
+    const head = [...story.querySelectorAll('.title_spoiler')].find((t) => /состоит из/i.test(t.textContent));
+    if (!head) return null;
+    let body = null;
+    const link = head.querySelector('a[href*="ShowOrHide"]');
+    const idMatch = link && link.getAttribute('href').match(/ShowOrHide\('([^']+)'\)/);
+    if (idMatch) body = document.getElementById(idMatch[1]);
+    if (!body) body = head.nextElementSibling;
+    if (!body || !body.classList.contains('text_spoiler')) return null;
+
+    const parts = [...body.querySelectorAll('li')]
+      .map((li) => {
+        const a = li.querySelector('a[href]');
+        let current = li.classList.contains('rfa');
+        if (!current && a) {
+          try {
+            current = new URL(a.href, location.href).pathname === location.pathname;
+          } catch (e) {
+            /* битая ссылка — не текущая */
+          }
+        }
+        return Object.assign(splitPart(fixMixed(cleanText(li))), { href: a ? a.href : null, current });
+      })
+      .filter((p) => p.name);
+    if (!parts.length) return null;
+
+    const prefix = commonPrefix(parts.map((p) => p.name));
+    const list = el('ol', { class: 'ojx-parts-list' });
+    parts.forEach((part, i) => {
+      const name = el('span', { class: 'ojx-part-name', title: part.name });
+      if (prefix && part.name.startsWith(prefix + ' ')) {
+        name.append(el('span', { class: 'ojx-dim', text: prefix }), part.name.slice(prefix.length));
+      } else {
+        name.textContent = part.name;
+      }
+      const cells = [el('span', { class: 'ojx-part-n', text: String(i + 1) }), name, el('span', { class: 'ojx-part-meta', text: part.meta })];
+      const row = part.href && !part.current ? el('a', { href: part.href }, ...cells) : el('span', null, ...cells);
+      list.append(el('li', { class: 'ojx-part' + (part.current ? ' is-current' : '') + (part.href ? '' : ' is-missing') }, row));
+    });
+
+    const section = el('div', { class: 'ojx-parts' }, el('div', { class: 'ojx-sect', text: 'Части · ' + parts.length }), list);
+
+    // Длинную франшизу сворачиваем до окна вокруг текущей части.
+    if (parts.length > PARTS_LIMIT) {
+      const cur = Math.max(0, parts.findIndex((p) => p.current));
+      const from = Math.max(0, Math.min(cur - 3, parts.length - PARTS_WINDOW));
+      [...list.children].forEach((li, i) => {
+        if (i < from || i >= from + PARTS_WINDOW) li.classList.add('ojx-fold');
+      });
+      const more = button({ class: 'ojx-more', text: 'Показать все (' + parts.length + ')' }, () => {
+        const open = list.classList.toggle('ojx-open');
+        more.textContent = open ? 'Свернуть' : 'Показать все (' + parts.length + ')';
+      });
+      section.append(more);
+    }
+    return section;
+  }
+
+  function buildHero(story) {
+    const h1 = story.querySelector('h1');
+    const rawTitle = h1 ? cleanText(h1) : document.title;
+    // «Синий экзорцист (4 сезон) [24 из 24]» — счётчик серий отдельно
+    const m = rawTitle.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
+    const title = fixMixed(m ? m[1] : rawTitle);
+    const badge = m ? fixMixed(m[2]) : '';
+    const romaji = fixMixed(cleanText(story.querySelector('.titleup h2, h2.romanji')));
+    const alt = fixMixed(cleanText(story.querySelector('[itemprop="alternativeHeadline"]')).replace(/;\s*$/, ''));
+    const upd = fixMixed(cleanText(story.querySelector('.editdate')))
+      .replace(/^Аниме обновлено:\s*/i, 'Обновлено ')
+      .replace(/\s+-\s+/, ' — ');
+
+    const info = el(
+      'div',
+      { class: 'ojx-info' },
+      el('div', { class: 'ojx-titlerow' }, copyable(title, 'ojx-title', 'h1'), badge && el('span', { class: 'ojx-badge', text: badge })),
+      romaji && copyable(romaji, 'ojx-romaji'),
+      alt && copyable(alt, 'ojx-alt'),
+      upd && el('div', { class: 'ojx-upd', text: upd })
+    );
+    // copyable(…, 'h1') кладёт класс и на h1, и на кнопку — кнопке он не нужен
+    const titleBtn = info.querySelector('h1 > .ojx-copy');
+    if (titleBtn) titleBtn.classList.remove('ojx-title');
+
+    const poster = buildPoster(story);
+    const parts = buildParts(story);
+    const cls = 'ojx-hero' + (poster ? '' : ' ojx-noposter') + (parts ? ' ojx-has-parts' : '');
+    return el('section', { class: cls }, poster, info, parts);
+  }
+
+  function buildEpisodesHead() {
+    return el(
+      'div',
+      { class: 'ojx-ehead' },
+      el(
+        'div',
+        { class: 'ojx-ehead-row' },
+        el('span', { class: 'ojx-ehead-title', text: 'Серии' }),
+        el('span', { class: 'ojx-count' }),
+        el('span', { class: 'ojx-now' })
+      ),
+      el('div', { class: 'ojx-enote', hidden: true, text: 'Серии переключаются в самом плеере' })
+    );
+  }
+
+  // Где плейлист стоял на странице сайта — чтобы вернуть его, если сборка упала.
+  let ajaxOrigin = null;
+
+  function build() {
+    const story = document.querySelector('article.fullstory');
+    const ajax = story && story.querySelector('.playlists-ajax');
+    if (!ajax) return false;
+
+    const head = buildEpisodesHead();
+    const watch = el('section', { class: 'ojx-watch ojx-loading' }, head);
+    toastNode = el('div', { class: 'ojx-toast', role: 'status' });
+    const shell = el('div', { id: 'ojx' }, buildBar(), buildHero(story), watch, toastNode);
+
+    // Age-gate (на animejoy был #modal) не прячем вместе со страницей.
+    const modal = document.getElementById('modal');
+    if (modal && modal.closest('body > .page')) document.body.append(modal);
+
+    // Плейлист переносим, а не копируем: обработчики сайта делегированы на
+    // body, ajax-ответ сайт пишет в этот же элемент (_self.html()). Переносим
+    // последним — всё, что может упасть, уже собрано.
+    ajaxOrigin = { ajax, parent: ajax.parentNode, next: ajax.nextSibling };
+    watch.prepend(ajax);
+    document.body.prepend(shell);
+
+    observePlaylist(ajax, watch, head);
+    installClickHelpers();
+    return true;
+  }
+
+  function start() {
+    let ok = false;
+    try {
+      ok = build();
+    } catch (e) {
+      console.error('[ojx]', e);
+      if (ajaxOrigin && ajaxOrigin.parent.isConnected) {
+        ajaxOrigin.parent.insertBefore(ajaxOrigin.ajax, ajaxOrigin.next && ajaxOrigin.next.parentNode === ajaxOrigin.parent ? ajaxOrigin.next : null);
+      }
+      const shell = document.getElementById('ojx');
+      if (shell) shell.remove();
+    }
+    if (!ok) {
+      root.classList.remove('ojx');
+      styleNode.remove();
+    }
+  }
+
+  // ==================== Плейлист ====================
+  //
+  // Разметка (ответ /engine/ajax/playlists.php, логика —
+  // templates/AnimeJoy/playlists/player.js):
+  //   .playlists-player
+  //     .playlists-lists > .playlists-items × 1–3 > ul > li[data-id]   плееры, диапазоны «1-10»…
+  //     .playlists-iframe > iframe                                     пересоздаётся на каждый клик
+  //     .playlists-videos > .playlists-items > ul > li[data-id][data-file]  серии ВСЕХ плееров
+  // Видимые — li.visible, выбранные — li.active (ставит jQuery синхронно).
+  // Каждый .playlists-items сайт превращает в горизонтальный Sly-слайдер.
+
+  // Sly снимаем: со слайдером сетка не работает — он ловит колесо над лентой
+  // (preventDefault, пока «есть куда листать»), тащит её мышью и пишет
+  // transform. Его destroy() снимает .active с элемента, который он сам
+  // считает активным (rel.activeItem, обычно первый li, не тот, что выбрал
+  // сайт), — поэтому .active запоминаем и возвращаем. Повторные
+  // .sly('reload'/'toCenter') сайта и ajsubs-episode-nav без экземпляра — no-op.
+  function destroySly(ajax) {
+    const $ = window.jQuery;
+    if (!$ || !$.fn || !$.fn.sly) return;
+    const frames = [...ajax.querySelectorAll('.playlists-items')].filter((f) => $.data(f, 'sly'));
+    if (!frames.length) return;
+    const active = [...ajax.querySelectorAll('li.active')];
+    $(frames).sly(false);
+    for (const li of active) li.classList.add('active');
+  }
+
+  // Подпись плитки: «12 серия» → «12», «3 спэшл» → «SP 3», «2 ova» → «OVA 2».
+  // Пункт Kodik «на весь сезон» подписан «~» или «`».
+  function shortLabel(text) {
+    let m;
+    if ((m = text.match(/^(\d+(?:\s*[-–]\s*\d+)?)\s*серия$/i))) return m[1].replace(/\s+/g, '');
+    if ((m = text.match(/^серия\s*(\d+)$/i))) return m[1];
+    if ((m = text.match(/^(\d+)\s*(?:спэшл|спешл|sp)$/i))) return 'SP ' + m[1];
+    if ((m = text.match(/^(\d+)\s*(ova|ona)$/i))) return m[2].toUpperCase() + ' ' + m[1];
+    if ((m = text.match(/^(\d+)\s*часть$/i))) return 'Часть ' + m[1];
+    if (!/[\p{L}\p{N}]/u.test(text)) return 'Все серии';
+    return text;
+  }
+
+  function decorate(li) {
+    if (li.dataset.ojxText !== undefined) return;
+    const text = fixMixed(cleanText(li));
+    const label = shortLabel(text);
+    const len = [...label].length;
+    li.dataset.ojxText = text;
+    li.dataset.ojxLabel = label;
+    li.dataset.ojxKind = text.replace(/\d+/g, '#');
+    li.dataset.ojxSpan = len <= 4 ? '1' : len <= 9 ? '2' : len <= 15 ? '3' : 'full';
+    if (label !== text && !/^\d/.test(label)) li.title = text;
+  }
+
+  // Восстановление выбора сайтом при загрузке (loadPlaylistSelected) ломается
+  // на двух уровнях списков: для плеера без поддиапазонов он сохраняет индекс
+  // -1, а -1 истинно — и сайт «кликает» последний диапазон чужого плеера.
+  // Итог (Стальной алхимик: Братство, Alloha): играет Alloha, а видимы и в
+  // ленте серии 61–64 + OVA от Sibnet, ни одна не выбрана. Правда — то, что
+  // загружено в iframe: делаем видимыми серии того же data-id.
+  function repairSelection(ajax, all) {
+    if (all.some((li) => li.classList.contains('visible') && li.classList.contains('active'))) return;
+    const frame = ajax.querySelector('.playlists-iframe iframe');
+    const src = frame && frame.getAttribute('src');
+    const playing =
+      all.find((li) => li.classList.contains('active') && (!src || li.getAttribute('data-file') === src)) ||
+      (src && all.find((li) => li.getAttribute('data-file') === src));
+    if (!playing) return;
+    for (const li of all) {
+      li.classList.toggle('visible', li.dataset.id === playing.dataset.id);
+      li.classList.toggle('active', li === playing);
+    }
+  }
+
+  function setFlag(node, attr, on) {
+    if (on === node.hasAttribute(attr)) return;
+    if (on) node.setAttribute(attr, '');
+    else node.removeAttribute(attr);
+  }
+
+  // Прокручиваем только саму панель серий, не страницу.
+  function scrollEpisodeIntoView(li, behavior) {
+    const box = li.closest('.playlists-videos');
+    if (!box || box.scrollHeight <= box.clientHeight) return;
+    const b = box.getBoundingClientRect();
+    const r = li.getBoundingClientRect();
+    if (r.top >= b.top + 6 && r.bottom <= b.bottom - 6) return;
+    box.scrollTo({ top: box.scrollTop + (r.top - b.top) - (box.clientHeight - r.height) / 2, behavior });
+  }
+
+  function observePlaylist(ajax, watch, head) {
+    const count = head.querySelector('.ojx-count');
+    const now = head.querySelector('.ojx-now');
+    const note = head.querySelector('.ojx-enote');
+    let scheduled = false;
+    let lastActive = null;
+
+    function run() {
+      scheduled = false;
+      destroySly(ajax);
+      const all = [...ajax.querySelectorAll('.playlists-videos li')];
+      watch.classList.toggle('ojx-loading', !all.length);
+      if (!all.length) return;
+
+      repairSelection(ajax, all);
+      const perPlayer = {};
+      for (const li of all) {
+        decorate(li);
+        perPlayer[li.dataset.id] = (perPlayer[li.dataset.id] || 0) + 1;
+      }
+      watch.classList.toggle('ojx-single', Object.values(perPlayer).every((n) => n < 2));
+
+      // Смена вида пункта («серия» → «спэшл», арки Kodik) — с новой строки.
+      const visible = all.filter((li) => li.classList.contains('visible'));
+      let prevKind = null;
+      for (const li of visible) {
+        setFlag(li, 'data-ojx-br', prevKind !== null && li.dataset.ojxKind !== prevKind);
+        prevKind = li.dataset.ojxKind;
+      }
+
+      const active = visible.find((li) => li.classList.contains('active')) || null;
+      count.textContent = String(visible.length);
+      // «~»/«`» у Kodik — показываем подпись плитки («Все серии»)
+      now.textContent = !active ? '' : /[\p{L}\p{N}]/u.test(active.dataset.ojxText) ? active.dataset.ojxText : active.dataset.ojxLabel;
+      // Первый .active в .playlists-lists — выбранный плеер (верхний уровень).
+      const player = ajax.querySelector('.playlists-lists li.active');
+      note.hidden = !(player && /kodik|alloha/i.test(player.textContent));
+
+      if (active && active !== lastActive) {
+        scrollEpisodeIntoView(active, lastActive && lastActive.isConnected ? 'smooth' : 'auto');
+        lastActive = active;
+      }
+    }
+
+    function schedule() {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(run, 0);
+    }
+
+    // Только class: наши data-* атрибуты наблюдатель не будят.
+    new MutationObserver(schedule).observe(ajax, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    schedule();
+  }
+
+  // Смена плеера: сайт всегда включает его первую серию — возвращаем ту же
+  // серию, что смотрели, если она у нового плеера есть (в том числе в другом
+  // диапазоне «11-20»). Только для настоящих кликов: восстановление выбора
+  // при загрузке сайт делает через .trigger('click').
+  function keepEpisode(chip) {
+    const current = document.querySelector('#ojx .playlists-videos li.visible.active');
+    if (!current || current.dataset.ojxText === undefined) return;
+    const text = current.dataset.ojxText;
+    const chipId = String(chip.dataset.id);
+    setTimeout(() => {
+      const visible = [...document.querySelectorAll('#ojx .playlists-videos li.visible')];
+      let target = visible.find((li) => li.dataset.ojxText === text);
+      if (!target) {
+        const other = [...document.querySelectorAll('#ojx .playlists-videos li')].find(
+          (li) => li.dataset.ojxText === text && String(li.dataset.id).startsWith(chipId + '_')
+        );
+        const range = other && document.querySelector('#ojx .playlists-lists li[data-id="' + cssEscape(other.dataset.id) + '"]');
+        if (range) {
+          range.click();
+          target = other;
+        }
+      }
+      if (target && !target.classList.contains('active')) target.click();
+    }, 0);
+  }
+
+  function cssEscape(value) {
+    return window.CSS && window.CSS.escape ? window.CSS.escape(value) : String(value).replace(/"/g, '\\"');
+  }
+
+  // После выбора серии мышью плеер целиком в кадр (если он ушёл за край).
+  // Ctrl+←/→ из ajsubs-episode-nav — синтетический click, его не трогаем.
+  function revealPlayer() {
+    const frame = document.querySelector('#ojx .playlists-iframe');
+    if (!frame || frame.style.position === 'fixed') return;
+    const r = frame.getBoundingClientRect();
+    if (r.top >= 0 && r.bottom <= window.innerHeight) return;
+    window.scrollBy({ top: r.top - 12, behavior: 'smooth' });
+  }
+
+  function installClickHelpers() {
+    // capture на document — раньше делегированного обработчика сайта на body
+    document.addEventListener(
+      'click',
+      (e) => {
+        if (!e.isTrusted || !(e.target instanceof Element)) return;
+        const chip = e.target.closest('#ojx .playlists-lists li');
+        if (chip) {
+          keepEpisode(chip);
+          return;
+        }
+        const episode = e.target.closest('#ojx .playlists-videos li');
+        // клик по отметке «просмотрено» (span внутри) сайт серией не считает
+        if (episode && e.target === episode) setTimeout(revealPlayer, 0);
+      },
+      true
+    );
+  }
+
+  // ==================== Запуск ====================
+  //
+  // Страницу сайта прячем сразу (document-start), чтобы она не мелькала до
+  // сборки интерфейса; если это не страница тайтла, start() всё вернёт.
+  // Стоит в самом конце: start() может выполниться синхронно (документ уже
+  // загружен — Tampermonkey иногда запускает скрипт поздно), и все let/const
+  // выше к этому моменту должны быть инициализированы.
+  const root = document.documentElement;
+  root.classList.add('ojx');
+  const styleNode = el('style', { id: 'ojx-style' });
+  styleNode.textContent = STYLES;
+  (document.head || root).append(styleNode);
+  onReady(start);
+})();
