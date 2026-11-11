@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy Title UI
 // @namespace    local
-// @version      1.5
+// @version      1.6
 // @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск и 3 последних открытых тайтла с серией (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
 // @match        *://otakujoy.fun/*
 // @match        *://animejoy.ru/*
@@ -198,6 +198,8 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
 #ojx .playlists-lists .playlists-items + .playlists-items li.visible.active { background: var(--accent-soft); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
 /* Уровень диапазонов «1101-1110» не показываем — его серии все в сетке. */
 #ojx .playlists-lists .playlists-items[data-ojx-ranges] { display: none !important; }
+#ojx .playlists-lists li[data-ojx-rank="1"] { order: -2; }
+#ojx .playlists-lists li[data-ojx-rank="2"] { order: -1; }
 #ojx .playlists-lists .playlists-items[data-ojx-cap]::before { content: attr(data-ojx-cap); display: block; margin: 0 0 5px 2px; color: var(--faint); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 #ojx .playlists-lists .playlists-items[data-ojx-cap] + .playlists-items[data-ojx-cap] { margin-top: 4px; }
 
@@ -1133,11 +1135,24 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     return all.filter((li) => ids.has(li.getAttribute('data-id')));
   }
 
+  // Порядок плееров в панели: AllVideo, Alloha, дальше — как у сайта.
+  // Только CSS order (ul — flex): DOM сайта и его индексы выбора не трогаем.
+  const PLAYER_RANK = [/allvideo/i, /alloha/i];
+
+  function rankPlayers(level) {
+    for (const li of level.querySelectorAll('li')) {
+      const i = PLAYER_RANK.findIndex((re) => re.test(li.textContent));
+      if (i < 0) delete li.dataset.ojxRank;
+      else li.dataset.ojxRank = String(i + 1);
+    }
+  }
+
   function labelLevels(ajax) {
     const ranges = rangeLevel(ajax);
     const levels = listLevels(ajax);
     const shown = levels.filter((level) => level !== ranges);
     for (const level of levels) {
+      if (level !== ranges && PLAYER_NAME_RE.test(level.textContent)) rankPlayers(level);
       setFlag(level, 'data-ojx-ranges', level === ranges);
       const cap = shown.length < 2 || level === ranges ? null : PLAYER_NAME_RE.test(level.textContent) ? 'Плеер' : 'Озвучка';
       if (cap) level.dataset.ojxCap = cap;
