@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AnimeJoy Title UI
 // @namespace    local
-// @version      1.4
-// @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
+// @version      1.5
+// @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск и 3 последних открытых тайтла с серией (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
 // @match        *://otakujoy.fun/*
 // @match        *://animejoy.ru/*
 // @run-at       document-start
@@ -22,6 +22,12 @@
   if (!IS_HOME && !/^\/[^/]+\/\d+-[^/]+\.html$/.test(location.pathname)) return;
 
   const OFF_KEY = 'ojx-off'; // '1' — пользователь вернул обычный вид сайта
+  // Недавно смотрел: [{path, title, poster, ep, t}], свежие первыми. Пишет
+  // страница тайтла (и в «Обычном виде» — без серии), читает главная.
+  // localStorage своего домена: animejoy.ru и otakujoy.fun — разные списки.
+  const RECENT_KEY = 'ojx-recent';
+  const RECENT_MAX = 12;
+  const RECENT_SHOWN = 3;
 
   // ==================== Стили ====================
   //
@@ -108,6 +114,25 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
 #ojx .ojx-home-links a { color: var(--faint); transition: color .12s; }
 #ojx .ojx-home-links a:hover { color: var(--text); }
 #ojx .ojx-home-results { margin-top: 26px; }
+/* Недавно смотрел — под полем поиска, пока нет результатов */
+#ojx .ojx-recent { width: min(680px, 100%); margin-top: 6px; }
+#ojx .ojx-recent[hidden], html.ojx-has-results #ojx .ojx-recent { display: none; }
+#ojx .ojx-recent-head { margin: 0 0 8px 4px; color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+#ojx .ojx-recent-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+#ojx .ojx-recent-item { position: relative; display: flex; gap: 10px; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); transition: background .12s, border-color .12s; }
+#ojx .ojx-recent-item:hover { background: var(--surface-2); border-color: var(--surface-3); }
+#ojx .ojx-recent-img { flex: none; width: 46px; aspect-ratio: 250 / 354; overflow: hidden; border-radius: 6px; background: var(--surface-2); }
+#ojx .ojx-recent-img img { display: block; width: 100%; height: 100%; object-fit: cover; }
+#ojx .ojx-recent-body { display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; padding-right: 14px; }
+#ojx .ojx-recent-t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.3; }
+#ojx .ojx-recent-m { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; color: var(--muted); }
+#ojx .ojx-recent-x { appearance: none; position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--faint); font-size: 11px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s, color .12s; }
+#ojx .ojx-recent-item:hover .ojx-recent-x, #ojx .ojx-recent-x:focus-visible { opacity: 1; }
+#ojx .ojx-recent-x:hover { background: var(--surface-3); color: var(--text); }
+@media (max-width: 640px) {
+  #ojx .ojx-recent-list { grid-template-columns: minmax(0, 1fr); }
+  #ojx .ojx-recent-x { opacity: 1; }
+}
 #ojx .ojx-home-results .ojx-sr-head { padding: 0 6px 12px; }
 #ojx .ojx-home-results .ojx-sr-grid { padding: 0; overflow: visible; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 
@@ -330,7 +355,9 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
   // AniList должна работать всегда.
   if (!IS_HOME && storageGet(OFF_KEY) === '1') {
     onReady(() => {
-      if (!document.querySelector('article.fullstory .playlists-ajax')) return;
+      const story = document.querySelector('article.fullstory');
+      if (!story || !story.querySelector('.playlists-ajax')) return;
+      recentTouch(storyEntry(story));
       const back = el('button', { type: 'button', text: 'Новый вид', title: 'Включить интерфейс AnimeJoy Title UI' });
       back.style.cssText =
         'position:fixed;right:16px;bottom:16px;z-index:2147483646;padding:8px 14px;border:0;border-radius:999px;' +
@@ -689,6 +716,88 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     if (candidates.length > 1) searchUi.status.textContent = 'Ничего не найдено. Пробовал: ' + candidates.join(' / ');
   }
 
+  // ==================== Недавно смотрел ====================
+
+  function recentLoad() {
+    try {
+      const list = JSON.parse(storageGet(RECENT_KEY) || '[]');
+      return Array.isArray(list) ? list.filter((x) => x && typeof x.path === 'string' && x.path.startsWith('/')) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function recentSave(list) {
+    storageSet(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX)));
+  }
+
+  // entry без ep не стирает запомненную серию (повторный заход, «Обычный вид»).
+  function recentTouch(entry) {
+    const list = recentLoad();
+    const prev = list.find((x) => x.path === entry.path) || {};
+    const next = Object.assign({}, prev, entry, { t: Date.now() });
+    recentSave([next, ...list.filter((x) => x.path !== entry.path)]);
+  }
+
+  function storyEntry(story) {
+    const img = story.querySelector('.text > picture img');
+    const og = document.querySelector('meta[property="og:image"]');
+    return {
+      path: location.pathname,
+      title: storyTitle(story).title,
+      poster: (img && img.src) || (og && og.content) || '',
+    };
+  }
+
+  function relDay(t) {
+    const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const days = Math.round((day(new Date()) - day(new Date(t))) / 864e5);
+    if (days <= 0) return 'сегодня';
+    if (days === 1) return 'вчера';
+    if (days < 7) return days + ' дн. назад';
+    return new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  }
+
+  function buildRecent() {
+    const box = el('section', { class: 'ojx-recent', 'aria-label': 'Недавно смотрел' });
+
+    function item(x) {
+      const remove = button({ class: 'ojx-recent-x', title: 'Убрать из списка', 'aria-label': 'Убрать из списка', text: '✕' }, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        recentSave(recentLoad().filter((y) => y.path !== x.path));
+        render();
+      });
+      return el(
+        'a',
+        { class: 'ojx-recent-item', href: x.path, title: x.title },
+        el('div', { class: 'ojx-recent-img' }, x.poster && el('img', { src: x.poster, alt: '', loading: 'lazy' })),
+        el(
+          'div',
+          { class: 'ojx-recent-body' },
+          el('div', { class: 'ojx-recent-t', text: x.title || x.path }),
+          el('div', { class: 'ojx-recent-m', text: [x.ep, x.t && relDay(x.t)].filter(Boolean).join(' · ') })
+        ),
+        remove
+      );
+    }
+
+    function render() {
+      const list = recentLoad().slice(0, RECENT_SHOWN);
+      box.hidden = !list.length;
+      box.replaceChildren(
+        el('div', { class: 'ojx-recent-head', text: 'Недавно смотрел' }),
+        el('div', { class: 'ojx-recent-list' }, ...list.map(item))
+      );
+    }
+
+    render();
+    // список поменялся в другой вкладке; «Назад» на главную из bfcache
+    window.addEventListener('storage', (e) => e.key === RECENT_KEY && render());
+    window.addEventListener('pageshow', (e) => e.persisted && render());
+    return box;
+  }
+
   function buildHome() {
     if (!document.body) return false;
     const form = buildSearch('inline');
@@ -705,7 +814,7 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
       el('a', { href: 'https://anilist.co/', text: 'AniList' })
     );
     toastNode = el('div', { class: 'ojx-toast', role: 'status' });
-    const shell = el('div', { id: 'ojx', class: 'ojx-home-page' }, el('section', { class: 'ojx-home-hero' }, logo, form, links), searchUi.results, toastNode);
+    const shell = el('div', { id: 'ojx', class: 'ojx-home-page' }, el('section', { class: 'ojx-home-hero' }, logo, form, links, buildRecent()), searchUi.results, toastNode);
     document.body.prepend(shell);
     window.addEventListener('hashchange', applyHash);
     if (location.hash.length > 1) applyHash();
@@ -819,13 +928,16 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     return section;
   }
 
-  function buildHero(story) {
+  // «Синий экзорцист (4 сезон) [24 из 24]» — счётчик серий отдельно
+  function storyTitle(story) {
     const h1 = story.querySelector('h1');
     const rawTitle = h1 ? cleanText(h1) : document.title;
-    // «Синий экзорцист (4 сезон) [24 из 24]» — счётчик серий отдельно
     const m = rawTitle.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
-    const title = fixMixed(m ? m[1] : rawTitle);
-    const badge = m ? fixMixed(m[2]) : '';
+    return { title: fixMixed(m ? m[1] : rawTitle), badge: m ? fixMixed(m[2]) : '' };
+  }
+
+  function buildHero(story) {
+    const { title, badge } = storyTitle(story);
     const romaji = fixMixed(cleanText(story.querySelector('.titleup h2, h2.romanji')));
     const alt = fixMixed(cleanText(story.querySelector('[itemprop="alternativeHeadline"]')).replace(/;\s*$/, ''));
     const upd = fixMixed(cleanText(story.querySelector('.editdate')))
@@ -890,6 +1002,7 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     watch.prepend(ajax);
     document.body.prepend(shell);
 
+    recentTouch(storyEntry(story));
     observePlaylist(ajax, watch, head);
     installClickHelpers();
     return true;
@@ -1103,6 +1216,8 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
       note.hidden = !(player && /kodik|alloha/i.test(player.textContent));
 
       if (active && active !== lastActive) {
+        // Kodik/Alloha: серия выбирается в самом плеере — её номер не знаем.
+        recentTouch({ path: location.pathname, ep: note.hidden ? now.textContent : '' });
         scrollEpisodeIntoView(active, lastActive && lastActive.isConnected ? 'smooth' : 'auto');
         lastActive = active;
       }
