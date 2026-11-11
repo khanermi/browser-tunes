@@ -1,11 +1,11 @@
 ---
 name: browser-tunes
-description: Как дорабатывать userscript'ы Tampermonkey из репо browser-tunes (~/browser-tunes, публичный khanermi/browser-tunes) — особенно видеоплееры на аниме/кино-сайтах (ajsubs/animejoy, yummyani, kinogo, rezka) и их «типичные функции» под геймпад: Ctrl+←/→ серии, F9 псевдо-fullscreen, фокус на плеере, Space/стрелки без мыши. Use whenever the user mentions «браузер тюнс», userscript/Tampermonkey, или присылает страницу сайта с плеером и просит «сделай F9», «фичи геймпада», «наши функции типичные», «не работает фулскрин/фокус/стрелки», «мусор/цифры в субтитрах» — даже если репо не назван. Этапы, приёмы отладки чужих iframe, тесты и релиз.
+description: Как дорабатывать userscript'ы Tampermonkey из репо browser-tunes (~/claude-home/browser-tunes, публичный khanermi/browser-tunes) — особенно видеоплееры на аниме/кино-сайтах (ajsubs/animejoy, yummyani, kinogo, rezka) и их «типичные функции» под геймпад: Ctrl+←/→ серии, F9 псевдо-fullscreen, фокус на плеере, Space/стрелки без мыши. Use whenever the user mentions «браузер тюнс», userscript/Tampermonkey, или присылает страницу сайта с плеером и просит «сделай F9», «фичи геймпада», «наши функции типичные», «не работает фулскрин/фокус/стрелки», «мусор/цифры в субтитрах» — даже если репо не назван. Этапы, приёмы отладки чужих iframe, тесты и релиз.
 ---
 
 # browser-tunes: доработка userscript'ов под плееры
 
-Репо — `~/browser-tunes`, плоский набор `*.user.js`, автообновление через
+Репо — `~/claude-home/browser-tunes`, плоский набор `*.user.js`, автообновление через
 `@updateURL` на `raw.githubusercontent.com/.../main`. **Сначала прочитай
 `CLAUDE.md` репо** — там по каждому сайту и плееру записаны неочевидные факты
 DOM, проверенные на живой странице. Не выводи их заново; дополняй.
