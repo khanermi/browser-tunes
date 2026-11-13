@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniList List Cards
 // @namespace    local
-// @version      1.0
+// @version      1.1
 // @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки.
 // @match        *://anilist.co/*
 // @run-at       document-start
@@ -23,11 +23,11 @@
   // от top — к новой высоте карточки не привязаны.
   // Только CSS: правила ждут .medialist.cards, переходы внутри SPA не важны.
   const css = `
-    .medialist.cards .list-section .list-entries {
+    html body .medialist.cards .list-section .list-entries {
       grid-template-rows: none;
       grid-auto-rows: auto;
     }
-    .medialist.cards .entry-card {
+    html body .medialist.cards .entry-card {
       height: auto;
       display: grid;
       grid-template-columns: 1fr auto;
@@ -35,12 +35,12 @@
       align-items: center;
       box-shadow: none;
     }
-    .medialist.cards .entry-card > .cover {
+    html body .medialist.cards .entry-card > .cover {
       position: relative;
       grid-area: 1 / 1 / 2 / 3;
       box-shadow: rgba(49, 54, 68, 0.2) 0 2px 20px;
     }
-    .medialist.cards .entry-card > .title {
+    html body .medialist.cards .entry-card > .title {
       position: static;
       grid-area: 2 / 1 / 3 / 3;
       align-self: start;
@@ -52,18 +52,18 @@
       -webkit-line-clamp: 2;
       overflow: hidden;
     }
-    .medialist.cards .entry-card > .progress,
-    .medialist.cards .entry-card > .score {
+    html body .medialist.cards .entry-card > .progress,
+    html body .medialist.cards .entry-card > .score {
       position: static;
       width: auto;
       height: auto;
       padding: 4px 2px 0;
     }
-    .medialist.cards .entry-card > .progress {
+    html body .medialist.cards .entry-card > .progress {
       grid-area: 3 / 1;
       justify-self: start;
     }
-    .medialist.cards .entry-card > .score {
+    html body .medialist.cards .entry-card > .score {
       grid-area: 3 / 2;
       justify-self: end;
     }
