@@ -933,7 +933,7 @@ dowód księgowy", а не "Faktura"), а не самостоятельная з
   `position: absolute; top: 10px; right: 10px`, 30×30, `opacity: 0` до
   `.entry-card:hover`; переносим на `bottom: 10px`. Над ней —
   кнопка AJ из `anilist-aj-button` (1.1).
-- **Обложка — ссылка (1.4)**: у сайта ссылка только `.title a`
+- **Обложка — ссылка (1.4; левый клик с 1.9 — `$router.push`, см. ниже)**: у сайта ссылка только `.title a`
   (router-link), `.cover > .image` — div с фоном. В `.cover` первым ребёнком
   кладётся `a.tm-cover-link` (`inset: 0`, без z-index) с тем же `href`:
   средняя кнопка / Ctrl+клик / «Открыть в новой вкладке» — нативно; обычный
@@ -986,6 +986,17 @@ dowód księgowy", а не "Faktura"), а не самостоятельная з
   налезают на чип.
   В 1.8 ещё чуть крупнее по просьбе: название 15.5px, чип 15px, «+» 22px
   (только `node --check`).
+- **Клик по названию — редактор записи (1.9)**, как кнопка «…»: у `.edit`
+  своего Vue нет, клик ловит карточка → `card.__vue__.openListEditor()` →
+  `$store.dispatch('medialistEditor/open', media.id)`. Скрипт перехватывает
+  обычный левый клик по `.entry-card > .title a` в capture на `document`
+  (`preventDefault` + `stopImmediatePropagation`, router-link не срабатывает)
+  и зовёт `openListEditor()`; Ctrl/Shift/средняя кнопка по названию — как
+  раньше, на тайтл. Обложка теперь ведёт на тайтл не через `.title a.click()`
+  (это открыло бы редактор), а через `vm.$router.push(href)`. Проверено
+  (код вставлен): реальный клик по «Sasaki and Peeps Season 2» — открылся
+  редактор этой записи, страница не сменилась; `$router.push` с `href`
+  обложки → `/anime/129201/…` без перезагрузки (маркер в `window` жив).
 
 ### `anilist-list-filters.user.js`
 Сайт: `anilist.co`. Список аниме/манги: фильтры не колонкой 180px слева, а

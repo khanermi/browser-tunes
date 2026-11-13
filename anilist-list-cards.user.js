@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AniList List Cards
 // @namespace    local
-// @version      1.8
-// @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки; обложка — ссылка на тайтл, как название; смайлики оценки — зелёный/жёлтый/красный; «+» серии прямо в счётчике, сохранение через 3 с без кликов.
+// @version      1.9
+// @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки; обложка — ссылка на тайтл, клик по названию открывает редактор записи (как «…»); смайлики оценки — зелёный/жёлтый/красный; «+» серии прямо в счётчике, сохранение через 3 с без кликов.
 // @match        *://anilist.co/*
 // @run-at       document-start
 // @grant        none
@@ -187,11 +187,12 @@
   style.textContent = css;
   (document.head || document.documentElement).appendChild(style);
 
-  // Обложка — ссылка, как название. У сайта ссылка только .title a
+  // Обложка — ссылка на тайтл. У сайта ссылка только .title a
   // (router-link), .cover > .image — просто div с фоном. Кладём в .cover
   // первым ребёнком <a href> на весь размер: средняя кнопка, Ctrl+клик и
-  // «Открыть в новой вкладке» работают сами. Обычный левый клик отдаём
-  // .title a — Vue-роутер открывает тайтл без перезагрузки страницы.
+  // «Открыть в новой вкладке» работают сами. Обычный левый клик —
+  // vm.$router.push: тайтл без перезагрузки страницы (1.9: не через
+  // .title a — её клик теперь открывает редактор, см. ниже).
   // Ссылка первая и без z-index: «…» (.edit), бейдж рейтинга и кнопка AJ
   // (позиционированы, идут после неё) рисуются поверх и кликаются как раньше.
   // Vue переиспользует карточки — href сверяем на каждом проходе.
@@ -215,11 +216,11 @@
         a.tabIndex = -1; // с клавиатуры — по названию, дубль не нужен
         a.setAttribute('aria-hidden', 'true');
         a.addEventListener('click', (e) => {
-          if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-          const link = titleLink(a.closest('.entry-card'));
-          if (!link) return;
+          if (!plainClick(e)) return;
+          const vm = cardVm(a.closest('.entry-card'));
+          if (!vm?.$router) return; // нет Vue — пусть браузер идёт по href
           e.preventDefault();
-          link.click();
+          vm.$router.push(a.getAttribute('href'));
         });
       }
       if (cover.firstElementChild !== a) cover.prepend(a);
@@ -227,6 +228,26 @@
       syncProgress(card);
     }
   }
+
+  function plainClick(e) {
+    return e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
+  }
+
+  // Клик по названию — редактор записи, как «…» (1.9). Кнопка .cover > .edit
+  // зовёт card.__vue__.openListEditor() → $store.dispatch('medialistEditor/open',
+  // media.id). Перехват в capture на document раньше router-link; Ctrl/средняя
+  // кнопка/«Открыть в новой вкладке» по названию по-прежнему ведут на тайтл,
+  // обычный клик на тайтл — обложка.
+  document.addEventListener('click', (e) => {
+    if (!plainClick(e)) return;
+    const link = e.target.closest?.('.medialist.cards .entry-card > .title a[href]');
+    if (!link) return;
+    const vm = cardVm(link.closest('.entry-card'));
+    if (typeof vm?.openListEditor !== 'function') return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    vm.openListEditor();
+  }, true);
 
   // «+ серия» без открытия «…» (1.6). У сайта .progress = «11/13» + span
   // .plus-progress (display: none до наведения), клик по нему —
