@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniList List Cards
 // @namespace    local
-// @version      1.6
+// @version      1.7
 // @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки; обложка — ссылка на тайтл, как название; смайлики оценки — зелёный/жёлтый/красный; «+» серии прямо в счётчике, сохранение через 3 с без кликов.
 // @match        *://anilist.co/*
 // @run-at       document-start
@@ -68,10 +68,17 @@
       background: none !important; /* у сайта — полупрозрачный цвет обложки */
       border-radius: 0;
       padding: 8px 2px 0;
+      font-size: 14.5px; /* у сайта 13px — мелко (1.7) */
+      line-height: 1.25;
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 2;
       overflow: hidden;
+    }
+    /* У сайта размер задан и на самой ссылке (13px) — наследуем от .title. */
+    html body .medialist.cards .entry-card > .title a {
+      font-size: inherit;
+      line-height: inherit;
     }
     html body .medialist.cards .entry-card > .progress,
     html body .medialist.cards .entry-card > .score {
@@ -106,10 +113,12 @@
       position: relative;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      margin: 4px 0 0;
-      padding: 2px 4px 2px 7px;
-      border-radius: 10px;
+      gap: 7px;
+      margin: 5px 0 0;
+      padding: 3px 4px 3px 10px; /* крупнее сайта (12px) — удобнее попадать (1.7) */
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 500;
       background: rgba(var(--color-blue), 0.08);
       cursor: pointer;
       user-select: none;
@@ -122,12 +131,12 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 16px;
-      height: 16px;
+      width: 20px;
+      height: 20px;
       border-radius: 50%;
       background: rgba(var(--color-blue), 0.2);
       color: rgb(var(--color-blue));
-      font-size: 13px;
+      font-size: 16px;
       font-weight: 700;
       line-height: 1;
       visibility: hidden;
@@ -143,15 +152,15 @@
     }
     html body .medialist.cards .entry-card > .progress.${CHIP}[data-tm-pending]::before {
       content: attr(data-tm-pending);
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 600;
       color: rgb(var(--color-text-bright)); /* --color-blue на профиле = акцент, как у прогресса */
     }
     html body .medialist.cards .entry-card > .progress.${CHIP}[data-tm-tick]::after {
       content: '';
       position: absolute;
-      left: 7px;
-      right: 7px;
+      left: 10px;
+      right: 10px;
       bottom: 0;
       height: 2px;
       border-radius: 1px;
