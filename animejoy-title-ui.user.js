@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AnimeJoy Title UI
 // @namespace    local
-// @version      1.6
-// @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск и 3 последних открытых тайтла с серией (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
+// @version      1.7
+// @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При первом заходе на тайтл включается первый плеер панели (AllVideo/Alloha), дальше — последний выбранный. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск и 3 последних открытых тайтла с серией (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
 // @match        *://otakujoy.fun/*
 // @match        *://animejoy.ru/*
 // @run-at       document-start
@@ -1147,6 +1147,20 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     }
   }
 
+  // Первый заход на тайтл (выбора в localStorage.playlistsSelected<news_id>
+  // нет): сайт включает первый плеер по DOM (часто Kodik), а у нас первым
+  // стоит AllVideo/Alloha (CSS order) — включаем первый по нашему порядку.
+  // Клик синтетический: сайт сам запишет выбор, и дальше восстанавливает уже
+  // его, а keepEpisode (только isTrusted) не вмешивается.
+  function pickFirstPlayer(ajax) {
+    const level = listLevels(ajax).find((l) => l !== rangeLevel(ajax) && PLAYER_NAME_RE.test(l.textContent));
+    if (!level) return;
+    const chips = [...level.querySelectorAll('li.visible')];
+    const rank = (li) => Number(li.dataset.ojxRank || PLAYER_RANK.length + 1);
+    const first = chips.reduce((best, li) => (!best || rank(li) < rank(best) ? li : best), null);
+    if (first && !first.classList.contains('active')) first.click();
+  }
+
   function labelLevels(ajax) {
     const ranges = rangeLevel(ajax);
     const levels = listLevels(ajax);
@@ -1182,6 +1196,8 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     const note = head.querySelector('.ojx-enote');
     let scheduled = false;
     let lastActive = null;
+    const newsId = (location.pathname.match(/\/(\d+)-[^/]*$/) || [])[1];
+    let firstVisit = !!newsId && storageGet('playlistsSelected' + newsId) === null;
 
     function run() {
       scheduled = false;
@@ -1199,6 +1215,10 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
       watch.classList.toggle('ojx-single', Object.values(perPlayer).every((n) => n < 2));
 
       labelLevels(ajax);
+      if (firstVisit) {
+        firstVisit = false;
+        pickFirstPlayer(ajax); // клик перестроит списки — run() придёт снова
+      }
       const visible = shownEpisodes(ajax, all);
       const shownSet = new Set(visible);
       for (const li of all) setFlag(li, 'data-ojx-show', shownSet.has(li));
