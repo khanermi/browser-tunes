@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.18
-// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. AllVideo запоминает громкость, изменённую ↑/↓. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
+// @version      1.19
+// @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. AllVideo: ↑/↓ меняют громкость шагом 10% и запоминают её. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // Плееры живут на своих доменах, а у Alloha домен случайный и меняется
 // (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
 // а сразу за шапкой кода гейтится: верхний документ — только ajsubs/animejoy/otakujoy,
@@ -754,6 +754,42 @@
     );
   }
 
+  // Родной шаг ↑/↓ у Playerjs в AllVideo — 0.2, пользователю нужен 0.1.
+  // Перехватываем голые ↑/↓ на window в capture (раньше обработчиков плеера)
+  // и ставим громкость через api('volume') — так двигается и его слайдер.
+  // Значение округляем до десятых, чтобы не копилась ошибка float.
+  // volumechange от этого же запоминает installAllVideoVolumeSaver.
+  const VOLUME_STEP = 0.1;
+
+  function installAllVideoVolumeStep() {
+    if (!ALLVIDEO_HOST.test(location.hostname)) return;
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+        if (isRealTextInput(e.target)) return;
+        const video = document.querySelector('video');
+        if (!video) return;
+        const dir = e.key === 'ArrowUp' ? 1 : -1;
+        const next = Math.min(1, Math.max(0, Math.round((video.volume + dir * VOLUME_STEP) * 10) / 10));
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const pjs = playerjsApi();
+        if (pjs) {
+          try {
+            pjs.api('volume', next);
+            return;
+          } catch (err) {
+            /* упадём на <video> */
+          }
+        }
+        video.volume = next;
+      },
+      true
+    );
+  }
+
   // ==================== Ветка внутри iframe плеера ====================
   //
   // Домены плееров используются и другими сайтами, поэтому хоткей включаем
@@ -771,6 +807,7 @@
     if (SITE_HOST.test(embedder)) {
       installKeyBridge();
       installAllVideoVolumeSaver();
+      installAllVideoVolumeStep();
     }
     return;
   }

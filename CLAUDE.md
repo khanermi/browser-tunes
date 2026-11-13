@@ -288,6 +288,13 @@
   (код обработчика вставлен в страницу): реальная ↓ 0.8 → 0.6, ключ 0.6, mute и
   unmute ключ не трогают, после reload `video.volume` 0.6. Слайдер не
   проверялся.
+- **AllVideo: шаг громкости ↑/↓ — 0.1 (1.19).** Родной шаг Playerjs 0.2
+  слишком грубый. `installAllVideoVolumeStep` ловит голые ↑/↓ на `window` в
+  capture (раньше обработчика плеера, `stopImmediatePropagation`), считает
+  `video.volume ± 0.1` с округлением до десятых и ставит через
+  `api('volume', x)` (фолбэк — `video.volume`); запоминание — тем же
+  `installAllVideoVolumeSaver` по `volumechange`. Гейт тот же (домен AllVideo +
+  referrer сайта). Проверено только `node --check`, на живом плеере — нет.
 
 - **Список серий — обычный DOM без хэшей**: плейлист грузится аяксом
   (`/engine/ajax/playlists.php`, логика в `templates/AnimeJoy/playlists/player.js`),
