@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AniList List Cards
 // @namespace    local
-// @version      1.3
-// @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки.
+// @version      1.4
+// @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки; обложка — ссылка на тайтл, как название.
 // @match        *://anilist.co/*
 // @run-at       document-start
 // @grant        none
@@ -26,7 +26,8 @@
   // обложка держит пропорцию 150:210 через aspect-ratio (.image — height 100%).
   // Кнопка «…» (.cover > .edit, у сайта top/right 10px, 30×30) — в правый
   // нижний угол обложки; над ней anilist-aj-button ставит кнопку AJ.
-  // Только CSS: правила ждут .medialist.cards, переходы внутри SPA не важны.
+  // CSS ждёт .medialist.cards, переходы внутри SPA не важны.
+  const COVER_LINK = 'tm-cover-link';
   const css = `
     html body .medialist.cards .list-section .list-entries {
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -47,6 +48,11 @@
       height: auto;
       aspect-ratio: 150 / 210;
       box-shadow: rgba(49, 54, 68, 0.2) 0 2px 20px;
+    }
+    html body .medialist.cards .entry-card .cover > .${COVER_LINK} {
+      position: absolute;
+      inset: 0;
+      border-radius: 3px;
     }
     html body .medialist.cards .entry-card .cover > .edit {
       top: auto;
@@ -85,4 +91,54 @@
   style.id = 'tm-anilist-list-cards';
   style.textContent = css;
   (document.head || document.documentElement).appendChild(style);
+
+  // Обложка — ссылка, как название. У сайта ссылка только .title a
+  // (router-link), .cover > .image — просто div с фоном. Кладём в .cover
+  // первым ребёнком <a href> на весь размер: средняя кнопка, Ctrl+клик и
+  // «Открыть в новой вкладке» работают сами. Обычный левый клик отдаём
+  // .title a — Vue-роутер открывает тайтл без перезагрузки страницы.
+  // Ссылка первая и без z-index: «…» (.edit), бейдж рейтинга и кнопка AJ
+  // (позиционированы, идут после неё) рисуются поверх и кликаются как раньше.
+  // Vue переиспользует карточки — href сверяем на каждом проходе.
+  function titleLink(card) {
+    return card.querySelector(':scope > .title a[href]');
+  }
+
+  function sync() {
+    for (const card of document.querySelectorAll('.medialist.cards .entry-card')) {
+      const cover = card.querySelector(':scope > .cover');
+      if (!cover) continue;
+      const href = titleLink(card)?.getAttribute('href');
+      let a = cover.querySelector(':scope > .' + COVER_LINK);
+      if (!href) {
+        a?.remove();
+        continue;
+      }
+      if (!a) {
+        a = document.createElement('a');
+        a.className = COVER_LINK;
+        a.tabIndex = -1; // с клавиатуры — по названию, дубль не нужен
+        a.setAttribute('aria-hidden', 'true');
+        a.addEventListener('click', (e) => {
+          if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+          const link = titleLink(a.closest('.entry-card'));
+          if (!link) return;
+          e.preventDefault();
+          link.click();
+        });
+      }
+      if (cover.firstElementChild !== a) cover.prepend(a);
+      if (a.getAttribute('href') !== href) a.setAttribute('href', href);
+    }
+  }
+
+  let scheduled = false;
+  new MutationObserver(() => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      sync();
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
 })();

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AniList List Filters
 // @namespace    local
-// @version      1.1
-// @description  Список аниме/манги AniList: фильтры не колонкой слева, а панелью сверху (вкладки списков, выпадашки в строку), список — на всю ширину.
+// @version      1.2
+// @description  Список аниме/манги AniList: фильтры не колонкой слева, а панелью сверху (вкладки списков, выпадашки в строку) с переключателем «Finished» рядом со Status, список — на всю ширину.
 // @match        *://anilist.co/*
 // @run-at       document-start
 // @grant        none
@@ -33,6 +33,8 @@
   // До 760px у сайта своя мобильная раскладка (фильтры за кнопкой) — её не
   // трогаем.
   const P = 'html:not(#tm) .medialist > .filters-wrap';
+  const TOGGLE = 'tm-finished';
+  const FINISHED = 'FINISHED';
   const css = `
     @media (min-width: 761px) {
       html:not(#tm) .medialist {
@@ -105,11 +107,65 @@
       /* Filters / Year / Sort — одна строка */
       ${P} .filter-group:nth-child(2) { gap: 10px; }
       ${P} .filter-group:nth-child(2) > .group-header { display: none; }
-      ${P} .filter-group .el-select { width: 140px; margin: 0; }
-      ${P} .filter-group .el-slider { width: 130px; margin: 0 6px; }
+      /* ширины подобраны, чтобы с «Finished» строка влезала в контейнер
+         1140px (окно < 1540px); «Genres & Tags» — длиннее остальных */
+      ${P} .filter-group .el-select { width: 124px; margin: 0; }
+      ${P} .filter-group .el-select.is-multiple,
+      ${P} .filter-group .el-select:has(.el-select__tags) { width: 140px; }
+      ${P} .filter-group .el-slider { width: 100px; margin: 0 6px; }
       ${P} .filter-group .el-slider__runway { background: rgb(var(--color-background)); }
       ${P} .filter-group:nth-child(4) { margin-left: auto; }
-      ${P} .filter-group:nth-child(4) .el-select { width: 160px; }
+      ${P} .filter-group:nth-child(4) .el-select { width: 140px; }
+
+      /* Переключатель «Finished» — после селекта Status */
+      ${P} .${TOGGLE} {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        border-radius: 8px;
+        background: rgb(var(--color-background));
+        color: rgb(var(--color-text-lighter));
+        font-size: 1.3rem;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.15s, background 0.15s;
+      }
+      ${P} .${TOGGLE}:hover {
+        color: rgb(var(--color-text));
+        background: rgba(var(--color-background), 0.7);
+      }
+      ${P} .${TOGGLE} input { position: absolute; opacity: 0; pointer-events: none; }
+      ${P} .${TOGGLE} .tm-box {
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        background: rgba(var(--color-text-lighter), 0.25);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s;
+      }
+      ${P} .${TOGGLE} .tm-box::after {
+        content: '';
+        width: 4px;
+        height: 8px;
+        margin-top: -2px;
+        border: solid rgb(var(--color-white));
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+        opacity: 0;
+      }
+      ${P} .${TOGGLE}:has(input:checked) { color: rgb(var(--color-text)); }
+      ${P} .${TOGGLE}:has(input:checked) .tm-box { background: rgb(var(--color-blue)); }
+      ${P} .${TOGGLE}:has(input:checked) .tm-box::after { opacity: 1; }
+      ${P} .${TOGGLE}:has(input:focus-visible) {
+        outline: 2px solid rgba(var(--color-blue), 0.6);
+        outline-offset: 2px;
+      }
 
       /* Поля (поиск, выпадашки) у сайта цвета --color-foreground — того же,
          что фон панели, и сливались с ним. Подложка как у вкладок, без рамок;
@@ -133,4 +189,48 @@
   style.id = 'tm-anilist-list-filters';
   style.textContent = css;
   (document.head || document.documentElement).appendChild(style);
+
+  // «Finished» — быстрый переключатель Status: Finished ⇄ все (null).
+  // Status — el-select (Element UI) с v-model, ищем его по опции FINISHED
+  // (классы у селектов перепутаны: у Status — .format, у Country — .status).
+  // Значение ставим $emit('input', …) на его Vue-компоненте — родитель
+  // обновляет фильтр как при выборе мышью (проверено: 108 → только
+  // FINISHED, null — обратно все). Галочка следует за селектом, если
+  // статус поменяли в нём самом. Нужен мир страницы (__vue__) — @grant none.
+  function statusSelect() {
+    for (const el of document.querySelectorAll('.medialist .filters .el-select')) {
+      if (el.__vue__?.options?.some((o) => o.value === FINISHED)) return el;
+    }
+    return null;
+  }
+
+  function sync() {
+    const el = statusSelect();
+    if (!el) return;
+    let label = el.parentElement.querySelector(':scope > .' + TOGGLE);
+    if (!label) {
+      label = document.createElement('label');
+      label.className = TOGGLE;
+      label.title = 'Только завершённые (Status: Finished)';
+      label.innerHTML = '<input type="checkbox"><span class="tm-box"></span>Finished';
+      label.firstChild.addEventListener('change', (e) => {
+        statusSelect()?.__vue__.$emit('input', e.target.checked ? FINISHED : null);
+      });
+    }
+    if (el.nextElementSibling !== label) el.after(label);
+    const checked = el.__vue__.value === FINISHED;
+    if (label.firstChild.checked !== checked) label.firstChild.checked = checked;
+  }
+
+  // SPA + Vue: пересчёт раз в кадр на любые мутации (смена значения
+  // селекта меняет текст его input — это тоже мутация).
+  let scheduled = false;
+  new MutationObserver(() => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      sync();
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'value'] });
 })();
