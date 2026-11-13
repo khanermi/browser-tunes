@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AniList List Filters
 // @namespace    local
-// @version      1.3
-// @description  Список аниме/манги AniList: фильтры не колонкой слева, а панелью сверху (вкладки списков, «Finished», сортировка; остальное — за кнопкой «Advanced»), список — на всю ширину.
+// @version      1.4
+// @description  Список аниме/манги AniList: фильтры не колонкой слева, а компактной панелью сверху (поиск, вкладки списков, «Finished», сортировка; остальное — за иконкой «Advanced»), список — на всю ширину.
 // @match        *://anilist.co/*
 // @run-at       document-start
 // @grant        none
@@ -16,22 +16,24 @@
   // .medialist — грид «180px фильтры | списки» (column-gap 40px). Внутри
   // .filters-wrap: поиск .filter-mobile-wrap и .filters с детьми
   //   1 .filter-group «Lists»   — span'ы All/Watching/… со span.count,
-  //                               в заголовке .action (сортировка списков,
-  //                               opacity 0 до наведения на группу);
+  //                               в заголовке .action «Reorder List
+  //                               Sections» (opacity 0 до наведения);
   //   2 .filter-group «Filters» — 4 el-select (Format, Status, Genres & Tags,
   //                               Country);
   //   3 .filter-group «Year»    — el-slider;
   //   4 .filter-group «Sort»    — el-select;
   //   5 .random-btn.
-  // .filters и группа Filters — display: contents: всё становится
-  // flex-элементами одной панели, строки задаёт order:
-  //   1-я — поиск, вкладки;
-  //   2-я — «Finished», кнопка «Advanced», Sort (справа);
-  //   3-я — (только при открытом Advanced) Format, Status, Genres & Tags,
-  //         Country, Year, случайный тайтл.
-  // Перенос на 3-ю строку: Sort с flex-basis calc(100% - 300px) забирает
-  // остаток 2-й строки, следующему элементу места не остаётся. Выпадашки
-  // el-select — поппер в body, от раскладки не зависят.
+  // .filters и группы Lists/Filters — display: contents: вкладки, селекты,
+  // заголовок Lists — отдельные flex-элементы панели, строки задаёт order:
+  //   основная — поиск, вкладки, «Finished», иконка «Advanced», Sort
+  //              (справа; в окне < 1540px не влезает и уходит строкой ниже);
+  //   Advanced — (только открытая) Format, Status, Genres & Tags, Country,
+  //              Year, случайный тайтл, «Reorder List Sections».
+  // Перенос перед Advanced — псевдоэлемент ::after с flex-basis 100% и
+  // нулевой высотой. Чтобы его пустая строка не добавляла лишний gap, у
+  // панели row-gap 0, а расстояние между строками — margin-block 7px у
+  // каждого элемента (padding панели на 7px меньше). Выпадашки el-select —
+  // поппер в body, от раскладки не зависят.
   // Правила сайта scoped (.medialist[data-v-…], .filter-group[data-v-…]) —
   // атрибут весит как класс, и стиль с document-start стоит раньше стилей
   // сайта. Отсюда префикс html:not(#tm): вес id перебивает любые их классы.
@@ -43,6 +45,10 @@
   const ADV_OPEN = 'tm-adv-open';
   const ADV_KEY = 'tm-anilist-filters-advanced';
   const FINISHED = 'FINISHED';
+  const LISTS = `${P} .filter-group:nth-child(1)`;
+  const FILTERS = `${P} .filter-group:nth-child(2)`;
+  const YEAR = `${P} .filter-group:nth-child(3)`;
+  const SORT = `${P} .filter-group:nth-child(4)`;
   const css = `
     .${ADV} { display: none; }
     @media (min-width: 761px) {
@@ -55,90 +61,98 @@
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 14px 10px;
+        gap: 0 10px;
         margin-bottom: 44px;
-        padding: 16px 18px;
+        padding: 9px 18px;
         border-radius: 6px;
         background: rgb(var(--color-foreground));
       }
-      ${P} > .filter-mobile-wrap { order: 0; flex: 0 0 220px; }
-      ${P} .filters { display: contents; }
-      ${P} .filter-group {
-        order: 3;
-        margin: 0;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      ${P} .filter-group > .group-header { margin: 0; white-space: nowrap; }
+      ${P} .filters,
+      ${LISTS},
+      ${FILTERS} { display: contents; }
+      ${LISTS} > .group-header,
+      ${FILTERS} > .group-header { display: none; }
 
-      /* Lists — вкладки-пилюли */
-      ${P} .filter-group:first-child {
+      /* flex-элементы панели: отступ между строками */
+      ${P} > .filter-mobile-wrap,
+      ${LISTS} > span,
+      ${LISTS} > .group-header,
+      ${FILTERS} > *,
+      ${YEAR},
+      ${SORT},
+      ${P} .random-btn { margin-block: 7px; }
+
+      /* основная строка */
+      ${P} > .filter-mobile-wrap { order: 0; flex: 0 0 150px; }
+      ${LISTS} > span {
         order: 1;
-        flex: 1 1 calc(100% - 240px);
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-      ${P} .filter-group:first-child > .group-header {
-        order: 99;
-        margin-left: auto;
-        font-size: 0; /* слово «Lists»; иконка .action остаётся */
-      }
-      ${P} .filter-group:first-child > .group-header .action {
-        display: inline-flex;
-        padding: 7px 9px;
-        border-radius: 16px;
-        background: rgb(var(--color-background));
-      }
-      ${P} .filter-group:first-child > .group-header svg { font-size: 1.3rem; }
-      ${P} .filter-group:first-child > span {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        margin: 0;
-        padding: 7px 12px;
+        margin-inline: 0 -4px; /* 10px gap панели → 6px между вкладками */
+        padding: 7px 10px;
         border-radius: 16px;
         background: rgb(var(--color-background));
         font-size: 1.3rem;
         text-transform: capitalize; /* «all» */
       }
-      ${P} .filter-group:first-child > span:hover {
+      ${LISTS} > span:hover {
         color: rgb(var(--color-text));
         background: rgba(var(--color-background), 0.7);
       }
-      ${P} .filter-group:first-child > span.active {
+      ${LISTS} > span.active {
         background: rgb(var(--color-blue)); /* акцент профиля */
         color: rgb(var(--color-white));
       }
-      ${P} .filter-group:first-child > span .count { opacity: 0.7; font-size: 1.15rem; }
-
-      /* 2-я строка: «Finished» (внутри группы Filters), «Advanced», Sort */
-      ${P} .filter-group:nth-child(2) { display: contents; }
-      ${P} .filter-group:nth-child(2) > .group-header { display: none; }
-      ${P} .${TOGGLE} { order: 3; }
-      ${P} .${ADV} { order: 4; }
-      ${P} .filter-group:nth-child(4) {
-        order: 5;
-        flex: 1 1 calc(100% - 300px);
-        justify-content: flex-end;
+      ${LISTS} > span .count { opacity: 0.7; font-size: 1.15rem; }
+      ${P} .${TOGGLE} { order: 2; margin-left: 4px; }
+      ${P} .${ADV} { order: 3; }
+      ${SORT} {
+        order: 4;
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
+      ${SORT} > .group-header { margin: 0; white-space: nowrap; }
+      ${SORT} .el-select { width: 140px; margin: 0; }
 
-      /* 3-я строка — Advanced */
-      ${P} .filter-group:nth-child(2) > .el-select,
-      ${P} .filter-group:nth-child(3),
-      ${P} .random-btn { order: 7; margin: 0; }
-      ${P}:not(.${ADV_OPEN}) .filter-group:nth-child(2) > .el-select,
-      ${P}:not(.${ADV_OPEN}) .filter-group:nth-child(3),
+      /* строка Advanced */
+      ${P}.${ADV_OPEN}::after {
+        content: '';
+        order: 6;
+        flex-basis: 100%;
+        height: 0;
+      }
+      ${FILTERS} > .el-select,
+      ${YEAR},
+      ${P} .random-btn { order: 7; }
+      ${LISTS} > .group-header { order: 8; } /* «Reorder» — в конец строки */
+      ${P}:not(.${ADV_OPEN}) ${FILTERS.slice(P.length)} > .el-select,
+      ${P}:not(.${ADV_OPEN}) ${YEAR.slice(P.length)},
       ${P}:not(.${ADV_OPEN}) .random-btn { display: none; }
-      /* «Genres & Tags» — длиннее остальных */
-      ${P} .filter-group .el-select { width: 124px; margin: 0; }
-      ${P} .filter-group .el-select.is-multiple,
-      ${P} .filter-group .el-select:has(.el-select__tags) { width: 140px; }
-      ${P} .filter-group .el-slider { width: 100px; margin: 0 6px; }
-      ${P} .filter-group .el-slider__runway { background: rgb(var(--color-background)); }
-      ${P} .filter-group:nth-child(4) .el-select { width: 140px; }
+      ${P}.${ADV_OPEN} ${LISTS.slice(P.length)} > .group-header { display: block; }
+      ${FILTERS} > .el-select { width: 124px; margin-inline: 0; }
+      ${FILTERS} > .el-select.is-multiple,
+      ${FILTERS} > .el-select:has(.el-select__tags) { width: 140px; }
+      ${YEAR} { display: flex; align-items: center; gap: 8px; }
+      ${YEAR} > .group-header { margin: 0; white-space: nowrap; }
+      ${YEAR} .el-slider { width: 100px; margin: 0 6px; }
+      ${YEAR} .el-slider__runway { background: rgb(var(--color-background)); }
+      ${P} .random-btn { margin-inline: 0; }
+      /* «Reorder List Sections» — иконка сайта; слово «Lists» прячем */
+      ${LISTS} > .group-header { font-size: 0; }
+      ${LISTS} > .group-header .action {
+        display: inline-flex;
+        margin: 0;
+        padding: 9px 11px;
+        border-radius: 8px;
+        background: rgb(var(--color-background));
+        opacity: 1;
+      }
+      ${LISTS} > .group-header svg { font-size: 1.3rem; }
 
-      /* Переключатель «Finished» — после селекта Status */
+      /* «Finished» и «Advanced» */
       ${P} .${TOGGLE}, ${P} .${ADV} {
         position: relative;
         display: inline-flex;
@@ -146,16 +160,18 @@
         gap: 8px;
         height: 32px;
         padding: 0 12px;
+        border: 0;
         border-radius: 8px;
         background: rgb(var(--color-background));
         color: rgb(var(--color-text-lighter));
+        font-family: inherit;
         font-size: 1.3rem;
         white-space: nowrap;
         cursor: pointer;
         user-select: none;
         transition: color 0.15s, background 0.15s;
       }
-      ${P} .${ADV} { border: 0; font-family: inherit; }
+      ${P} .${ADV} { gap: 7px; padding: 0 10px; }
       ${P} .${TOGGLE}:hover, ${P} .${ADV}:hover {
         color: rgb(var(--color-text));
         background: rgba(var(--color-background), 0.7);
@@ -184,11 +200,12 @@
       ${P} .${TOGGLE}:has(input:checked) { color: rgb(var(--color-text)); }
       ${P} .${TOGGLE}:has(input:checked) .tm-box { background: rgb(var(--color-blue)); }
       ${P} .${TOGGLE}:has(input:checked) .tm-box::after { opacity: 1; }
+      ${P} .${ADV} svg { width: 15px; height: 15px; }
       ${P} .${ADV}::after { /* шеврон */
         content: '';
         width: 6px;
         height: 6px;
-        margin: -3px 0 0 2px;
+        margin-top: -3px;
         border: solid currentColor;
         border-width: 0 1.5px 1.5px 0;
         transform: rotate(45deg);
@@ -197,15 +214,18 @@
       ${P}.${ADV_OPEN} .${ADV} { color: rgb(var(--color-text)); }
       ${P}.${ADV_OPEN} .${ADV}::after { transform: rotate(-135deg); margin-top: 3px; }
       ${P} .${ADV} .tm-adv-count {
-        min-width: 18px;
-        height: 18px;
-        padding: 0 5px;
-        border-radius: 9px;
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 8px;
         background: rgb(var(--color-blue));
         color: rgb(var(--color-white));
-        font-size: 1.1rem;
-        font-weight: 600;
-        line-height: 18px;
+        font-size: 1rem;
+        font-weight: 700;
+        line-height: 16px;
         text-align: center;
       }
       ${P} .${ADV} .tm-adv-count:empty { display: none; }
@@ -238,6 +258,13 @@
   style.textContent = css;
   (document.head || document.documentElement).appendChild(style);
 
+  // Иконка «Advanced» — ползунки (как «настройки фильтра»), рисуется
+  // currentColor, поэтому подсвечивается вместе с текстом кнопки.
+  const ADV_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">' +
+    '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/>' +
+    '<circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>';
+
   // «Finished» — быстрый переключатель Status: Finished ⇄ все (null).
   // Status — el-select (Element UI) с v-model, ищем его по опции FINISHED
   // (классы у селектов перепутаны: у Status — .format, у Country — .status).
@@ -252,12 +279,12 @@
     return null;
   }
 
-  // «Advanced» — показать/скрыть 3-ю строку (класс на .filters-wrap,
-  // состояние — localStorage). Счётчик на кнопке — сколько фильтров из
-  // спрятанных задано, чтобы при закрытой строке было видно, почему список
-  // короче: селекты группы Filters с непустым значением (Status = FINISHED
-  // не считаем — его видно по «Finished») и год, если слайдер не на минимуме
-  // (минимум 1950 = «любой»).
+  // «Advanced» — показать/скрыть строку спрятанных фильтров (класс на
+  // .filters-wrap, состояние — localStorage). Счётчик на иконке — сколько
+  // фильтров из спрятанных задано, чтобы при закрытой строке было видно,
+  // почему список короче: селекты группы Filters с непустым значением
+  // (Status = FINISHED не считаем — его видно по «Finished») и год, если
+  // слайдер не на минимуме (минимум 1950 = «любой»).
   function advOpen() {
     try {
       return localStorage.getItem(ADV_KEY) === '1';
@@ -308,8 +335,9 @@
       btn = document.createElement('button');
       btn.type = 'button';
       btn.className = ADV;
-      btn.title = 'Format, Status, Genres & Tags, Country, Year, случайный тайтл';
-      btn.innerHTML = 'Advanced<span class="tm-adv-count"></span>';
+      btn.title = 'Advanced: Format, Status, Genres & Tags, Country, Year, случайный тайтл, порядок разделов';
+      btn.setAttribute('aria-label', 'Advanced filters');
+      btn.innerHTML = ADV_ICON + '<span class="tm-adv-count"></span>';
       btn.addEventListener('click', () => {
         const open = !btn.closest('.filters-wrap').classList.contains(ADV_OPEN);
         setAdvOpen(open);
