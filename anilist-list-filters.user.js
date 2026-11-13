@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AniList List Filters
 // @namespace    local
-// @version      1.4
-// @description  Список аниме/манги AniList: фильтры не колонкой слева, а компактной панелью сверху (поиск, вкладки списков, «Finished», сортировка; остальное — за иконкой «Advanced»), список — на всю ширину.
+// @version      1.5
+// @description  Список аниме/манги AniList: фильтры не колонкой слева, а компактной панелью сверху (поиск, вкладки списков, «Finished», «Advanced» и сортировка иконками; остальное — за «Advanced»), список — на всю ширину.
 // @match        *://anilist.co/*
 // @run-at       document-start
 // @grant        none
@@ -26,7 +26,9 @@
   // .filters и группы Lists/Filters — display: contents: вкладки, селекты,
   // заголовок Lists — отдельные flex-элементы панели, строки задаёт order:
   //   основная — поиск, вкладки, «Finished», иконка «Advanced», Sort
-  //              (справа; в окне < 1540px не влезает и уходит строкой ниже);
+  //              иконкой справа. Поиск гибкий (120–220px, добирает
+  //              свободное место), вкладки поплотнее — строка влезает уже
+  //              при ширине окна ~1320px CSS (Chrome у пользователя ×1.3);
   //   Advanced — (только открытая) Format, Status, Genres & Tags, Country,
   //              Year, случайный тайтл, «Reorder List Sections».
   // Перенос перед Advanced — псевдоэлемент ::after с flex-basis 100% и
@@ -49,6 +51,10 @@
   const FILTERS = `${P} .filter-group:nth-child(2)`;
   const YEAR = `${P} .filter-group:nth-child(3)`;
   const SORT = `${P} .filter-group:nth-child(4)`;
+  // Значок сортировки (стрелки вверх/вниз) — data-URL для mask.
+  const SORT_ICON = 'data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M7 20V4M3.5 7.5 7 4l3.5 3.5M17 4v16M13.5 16.5 17 20l3.5-3.5"/></svg>');
   const css = `
     .${ADV} { display: none; }
     @media (min-width: 761px) {
@@ -83,14 +89,14 @@
       ${P} .random-btn { margin-block: 7px; }
 
       /* основная строка */
-      ${P} > .filter-mobile-wrap { order: 0; flex: 0 0 150px; }
+      ${P} > .filter-mobile-wrap { order: 0; flex: 1 1 120px; min-width: 120px; max-width: 220px; }
       ${LISTS} > span {
         order: 1;
         display: inline-flex;
         align-items: center;
         gap: 6px;
         margin-inline: 0 -4px; /* 10px gap панели → 6px между вкладками */
-        padding: 7px 10px;
+        padding: 7px 9px;
         border-radius: 16px;
         background: rgb(var(--color-background));
         font-size: 1.3rem;
@@ -107,15 +113,36 @@
       ${LISTS} > span .count { opacity: 0.7; font-size: 1.15rem; }
       ${P} .${TOGGLE} { order: 2; margin-left: 4px; }
       ${P} .${ADV} { order: 3; }
-      ${SORT} {
-        order: 4;
-        margin-left: auto;
-        display: flex;
-        align-items: center;
-        gap: 8px;
+      /* Sort — иконкой: слово «Sort» прячем, у селекта прозрачный текст и
+         без стрелки, сверху — значок через mask (цвет — background, чтобы
+         подсвечивался при наведении). Клик — по самому input, выпадашка
+         сайта как была; текущая сортировка — в подсказке (title из JS). */
+      ${SORT} { order: 4; margin-left: auto; }
+      ${SORT} > .group-header { display: none; }
+      ${SORT} .el-select { display: block; width: 36px; margin: 0; }
+      ${SORT} .el-input__inner {
+        height: 32px;
+        padding: 0;
+        color: transparent;
+        cursor: pointer;
       }
-      ${SORT} > .group-header { margin: 0; white-space: nowrap; }
-      ${SORT} .el-select { width: 140px; margin: 0; }
+      ${SORT} .el-input__suffix { display: none; }
+      ${SORT} .el-select::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        margin: auto;
+        width: 16px;
+        height: 16px;
+        background: rgb(var(--color-text-lighter));
+        -webkit-mask: url("${SORT_ICON}") center / contain no-repeat;
+        mask: url("${SORT_ICON}") center / contain no-repeat;
+        pointer-events: none;
+        transition: background 0.15s;
+      }
+      ${SORT} .el-select:hover::before,
+      ${SORT} .el-select:has(.is-focus)::before { background: rgb(var(--color-text)); }
 
       /* строка Advanced */
       ${P}.${ADV_OPEN}::after {
@@ -312,7 +339,17 @@
     return n;
   }
 
+  // Подсказка у иконки Sort — текущая сортировка (её текст в input).
+  function syncSortTitle() {
+    const sel = document.querySelector('.medialist .filters .filter-group:nth-child(4) .el-select');
+    const v = sel?.querySelector('.el-input__inner')?.value;
+    if (!sel || !v) return;
+    const t = 'Sort: ' + v;
+    if (sel.title !== t) sel.title = t;
+  }
+
   function sync() {
+    syncSortTitle();
     const el = statusSelect();
     if (!el) return;
     let label = el.parentElement.querySelector(':scope > .' + TOGGLE);
