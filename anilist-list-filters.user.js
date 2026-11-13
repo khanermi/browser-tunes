@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AniList List Filters
 // @namespace    local
-// @version      1.2
-// @description  Список аниме/манги AniList: фильтры не колонкой слева, а панелью сверху (вкладки списков, выпадашки в строку) с переключателем «Finished» рядом со Status, список — на всю ширину.
+// @version      1.3
+// @description  Список аниме/манги AniList: фильтры не колонкой слева, а панелью сверху (вкладки списков, «Finished», сортировка; остальное — за кнопкой «Advanced»), список — на всю ширину.
 // @match        *://anilist.co/*
 // @run-at       document-start
 // @grant        none
@@ -23,10 +23,15 @@
   //   3 .filter-group «Year»    — el-slider;
   //   4 .filter-group «Sort»    — el-select;
   //   5 .random-btn.
-  // .filters делаем display: contents — всё это становится flex-элементами
-  // одной панели: 1-я строка — поиск, вкладки, случайный тайтл; 2-я —
-  // фильтры, год, сортировка (справа). Выпадашки el-select — поппер в body,
-  // от раскладки не зависят.
+  // .filters и группа Filters — display: contents: всё становится
+  // flex-элементами одной панели, строки задаёт order:
+  //   1-я — поиск, вкладки;
+  //   2-я — «Finished», кнопка «Advanced», Sort (справа);
+  //   3-я — (только при открытом Advanced) Format, Status, Genres & Tags,
+  //         Country, Year, случайный тайтл.
+  // Перенос на 3-ю строку: Sort с flex-basis calc(100% - 300px) забирает
+  // остаток 2-й строки, следующему элементу места не остаётся. Выпадашки
+  // el-select — поппер в body, от раскладки не зависят.
   // Правила сайта scoped (.medialist[data-v-…], .filter-group[data-v-…]) —
   // атрибут весит как класс, и стиль с document-start стоит раньше стилей
   // сайта. Отсюда префикс html:not(#tm): вес id перебивает любые их классы.
@@ -34,8 +39,12 @@
   // трогаем.
   const P = 'html:not(#tm) .medialist > .filters-wrap';
   const TOGGLE = 'tm-finished';
+  const ADV = 'tm-adv';
+  const ADV_OPEN = 'tm-adv-open';
+  const ADV_KEY = 'tm-anilist-filters-advanced';
   const FINISHED = 'FINISHED';
   const css = `
+    .${ADV} { display: none; }
     @media (min-width: 761px) {
       html:not(#tm) .medialist {
         grid-template-columns: minmax(0, 1fr);
@@ -66,7 +75,7 @@
       /* Lists — вкладки-пилюли */
       ${P} .filter-group:first-child {
         order: 1;
-        flex: 1 1 calc(100% - 290px);
+        flex: 1 1 calc(100% - 240px);
         flex-wrap: wrap;
         gap: 6px;
       }
@@ -102,23 +111,35 @@
         color: rgb(var(--color-white));
       }
       ${P} .filter-group:first-child > span .count { opacity: 0.7; font-size: 1.15rem; }
-      ${P} .random-btn { order: 2; margin: 0; }
 
-      /* Filters / Year / Sort — одна строка */
-      ${P} .filter-group:nth-child(2) { gap: 10px; }
+      /* 2-я строка: «Finished» (внутри группы Filters), «Advanced», Sort */
+      ${P} .filter-group:nth-child(2) { display: contents; }
       ${P} .filter-group:nth-child(2) > .group-header { display: none; }
-      /* ширины подобраны, чтобы с «Finished» строка влезала в контейнер
-         1140px (окно < 1540px); «Genres & Tags» — длиннее остальных */
+      ${P} .${TOGGLE} { order: 3; }
+      ${P} .${ADV} { order: 4; }
+      ${P} .filter-group:nth-child(4) {
+        order: 5;
+        flex: 1 1 calc(100% - 300px);
+        justify-content: flex-end;
+      }
+
+      /* 3-я строка — Advanced */
+      ${P} .filter-group:nth-child(2) > .el-select,
+      ${P} .filter-group:nth-child(3),
+      ${P} .random-btn { order: 7; margin: 0; }
+      ${P}:not(.${ADV_OPEN}) .filter-group:nth-child(2) > .el-select,
+      ${P}:not(.${ADV_OPEN}) .filter-group:nth-child(3),
+      ${P}:not(.${ADV_OPEN}) .random-btn { display: none; }
+      /* «Genres & Tags» — длиннее остальных */
       ${P} .filter-group .el-select { width: 124px; margin: 0; }
       ${P} .filter-group .el-select.is-multiple,
       ${P} .filter-group .el-select:has(.el-select__tags) { width: 140px; }
       ${P} .filter-group .el-slider { width: 100px; margin: 0 6px; }
       ${P} .filter-group .el-slider__runway { background: rgb(var(--color-background)); }
-      ${P} .filter-group:nth-child(4) { margin-left: auto; }
       ${P} .filter-group:nth-child(4) .el-select { width: 140px; }
 
       /* Переключатель «Finished» — после селекта Status */
-      ${P} .${TOGGLE} {
+      ${P} .${TOGGLE}, ${P} .${ADV} {
         position: relative;
         display: inline-flex;
         align-items: center;
@@ -134,7 +155,8 @@
         user-select: none;
         transition: color 0.15s, background 0.15s;
       }
-      ${P} .${TOGGLE}:hover {
+      ${P} .${ADV} { border: 0; font-family: inherit; }
+      ${P} .${TOGGLE}:hover, ${P} .${ADV}:hover {
         color: rgb(var(--color-text));
         background: rgba(var(--color-background), 0.7);
       }
@@ -162,6 +184,32 @@
       ${P} .${TOGGLE}:has(input:checked) { color: rgb(var(--color-text)); }
       ${P} .${TOGGLE}:has(input:checked) .tm-box { background: rgb(var(--color-blue)); }
       ${P} .${TOGGLE}:has(input:checked) .tm-box::after { opacity: 1; }
+      ${P} .${ADV}::after { /* шеврон */
+        content: '';
+        width: 6px;
+        height: 6px;
+        margin: -3px 0 0 2px;
+        border: solid currentColor;
+        border-width: 0 1.5px 1.5px 0;
+        transform: rotate(45deg);
+        transition: transform 0.15s, margin 0.15s;
+      }
+      ${P}.${ADV_OPEN} .${ADV} { color: rgb(var(--color-text)); }
+      ${P}.${ADV_OPEN} .${ADV}::after { transform: rotate(-135deg); margin-top: 3px; }
+      ${P} .${ADV} .tm-adv-count {
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border-radius: 9px;
+        background: rgb(var(--color-blue));
+        color: rgb(var(--color-white));
+        font-size: 1.1rem;
+        font-weight: 600;
+        line-height: 18px;
+        text-align: center;
+      }
+      ${P} .${ADV} .tm-adv-count:empty { display: none; }
+      ${P} .${ADV}:focus-visible,
       ${P} .${TOGGLE}:has(input:focus-visible) {
         outline: 2px solid rgba(var(--color-blue), 0.6);
         outline-offset: 2px;
@@ -204,6 +252,39 @@
     return null;
   }
 
+  // «Advanced» — показать/скрыть 3-ю строку (класс на .filters-wrap,
+  // состояние — localStorage). Счётчик на кнопке — сколько фильтров из
+  // спрятанных задано, чтобы при закрытой строке было видно, почему список
+  // короче: селекты группы Filters с непустым значением (Status = FINISHED
+  // не считаем — его видно по «Finished») и год, если слайдер не на минимуме
+  // (минимум 1950 = «любой»).
+  function advOpen() {
+    try {
+      return localStorage.getItem(ADV_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function setAdvOpen(open) {
+    try {
+      localStorage.setItem(ADV_KEY, open ? '1' : '0');
+    } catch {}
+  }
+
+  function hiddenActive(group) {
+    let n = 0;
+    for (const el of group.querySelectorAll(':scope > .el-select')) {
+      const v = el.__vue__?.value;
+      if (v == null || v === '' || v === FINISHED) continue;
+      if (Array.isArray(v) && !v.length) continue;
+      n++;
+    }
+    const slider = group.parentElement.querySelector('.el-slider')?.__vue__;
+    if (slider && slider.value > slider.min) n++;
+    return n;
+  }
+
   function sync() {
     const el = statusSelect();
     if (!el) return;
@@ -220,6 +301,29 @@
     if (el.nextElementSibling !== label) el.after(label);
     const checked = el.__vue__.value === FINISHED;
     if (label.firstChild.checked !== checked) label.firstChild.checked = checked;
+
+    const wrap = el.closest('.filters-wrap');
+    let btn = el.parentElement.querySelector(':scope > .' + ADV);
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = ADV;
+      btn.title = 'Format, Status, Genres & Tags, Country, Year, случайный тайтл';
+      btn.innerHTML = 'Advanced<span class="tm-adv-count"></span>';
+      btn.addEventListener('click', () => {
+        const open = !btn.closest('.filters-wrap').classList.contains(ADV_OPEN);
+        setAdvOpen(open);
+        btn.closest('.filters-wrap').classList.toggle(ADV_OPEN, open);
+        btn.setAttribute('aria-expanded', String(open));
+      });
+    }
+    if (label.nextElementSibling !== btn) label.after(btn);
+    const open = advOpen();
+    if (wrap.classList.contains(ADV_OPEN) !== open) wrap.classList.toggle(ADV_OPEN, open);
+    if (btn.getAttribute('aria-expanded') !== String(open)) btn.setAttribute('aria-expanded', String(open));
+    const n = hiddenActive(el.parentElement);
+    const count = btn.lastChild;
+    if (count.textContent !== (n ? String(n) : '')) count.textContent = n ? String(n) : '';
   }
 
   // SPA + Vue: пересчёт раз в кадр на любые мутации (смена значения
@@ -233,4 +337,5 @@
       sync();
     });
   }).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'value'] });
+  sync();
 })();
