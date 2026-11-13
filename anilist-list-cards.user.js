@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniList List Cards
 // @namespace    local
-// @version      1.2
+// @version      1.3
 // @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки.
 // @match        *://anilist.co/*
 // @run-at       document-start
@@ -24,6 +24,8 @@
   // Колонки — minmax(150px, 1fr) вместо фиксированных 150px: сетка тянется на
   // всю ширину (особенно с anilist-list-filters, где колонки фильтров нет), а
   // обложка держит пропорцию 150:210 через aspect-ratio (.image — height 100%).
+  // Кнопка «…» (.cover > .edit, у сайта top/right 10px, 30×30) — в правый
+  // нижний угол обложки; над ней anilist-aj-button ставит кнопку AJ.
   // Только CSS: правила ждут .medialist.cards, переходы внутри SPA не важны.
   const css = `
     html body .medialist.cards .list-section .list-entries {
@@ -45,6 +47,10 @@
       height: auto;
       aspect-ratio: 150 / 210;
       box-shadow: rgba(49, 54, 68, 0.2) 0 2px 20px;
+    }
+    html body .medialist.cards .entry-card .cover > .edit {
+      top: auto;
+      bottom: 10px;
     }
     html body .medialist.cards .entry-card > .title {
       position: static;

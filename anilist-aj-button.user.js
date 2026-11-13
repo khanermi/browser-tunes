@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AniList → AJ
 // @namespace    local
-// @version      1.0
-// @description  Кнопка «AJ» — поиск тайтла на otakujoy.fun (AnimeJoy): колонка справа в списке аниме (вид строками) и кнопка под обложкой на странице тайтла. Открывает в новой вкладке главную AJ с #al=<id AniList> — там animejoy-title-ui сам берёт ромадзи/английское название и ищет.
+// @version      1.1
+// @description  Кнопка «AJ» — поиск тайтла на otakujoy.fun (AnimeJoy): колонка справа в списке аниме (вид строками), кнопка над «…» на обложке (вид карточками) и кнопка под обложкой на странице тайтла. Открывает в новой вкладке главную AJ с #al=<id AniList> — там animejoy-title-ui сам берёт ромадзи/английское название и ищет.
 // @match        *://anilist.co/*
 // @run-at       document-idle
 // @grant        none
@@ -15,6 +15,7 @@
 
   const CELL = 'tm-aj';
   const PAGE_BTN = 'tm-aj-open';
+  const CARD_BTN = 'tm-aj-card';
 
   // Поиск делает animejoy-title-ui на главной AJ: по id он запрашивает у
   // GraphQL AniList ромадзи и английское название и пробует их по очереди;
@@ -50,6 +51,32 @@
     .${CELL} a:hover {
       background: #7350ff;
       color: #fff;
+    }
+    /* Вид карточками: над кнопкой «…» (.edit, 30×30, right 10px; в
+       anilist-list-cards перенесена вниз — bottom 10px), так же по наведению. */
+    .medialist.cards .entry-card .cover > .${CARD_BTN} {
+      position: absolute;
+      right: 10px;
+      bottom: 46px;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 3px;
+      background: #7350ff;
+      color: #fff;
+      font-size: 1.2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      opacity: 0;
+      transition: opacity 0.2s, filter 0.15s;
+    }
+    .medialist.cards .entry-card:hover .cover > .${CARD_BTN} {
+      opacity: 1;
+    }
+    .medialist.cards .entry-card .cover > .${CARD_BTN}:hover {
+      filter: brightness(1.15);
     }
     .header .actions .${PAGE_BTN} {
       grid-column: 1 / -1;
@@ -125,6 +152,29 @@
     }
   }
 
+  // Список (вид карточками): .entry-card > .cover (.edit «…» + .image),
+  // название — .entry-card > .title a[href=/anime/<id>/…]. Кнопка — в .cover,
+  // чтобы стоять на обложке над «…». Vue переиспользует карточки — как и
+  // со строками, href сверяем на каждом проходе.
+  function syncCards() {
+    for (const card of document.querySelectorAll('.entry-card')) {
+      const cover = card.querySelector(':scope > .cover');
+      const link = card.querySelector(':scope > .title a[href]');
+      const id = link && animeId(link.getAttribute('href'));
+      let btn = cover?.querySelector(':scope > .' + CARD_BTN);
+      if (!cover || !id) {
+        btn?.remove();
+        continue;
+      }
+      if (!btn) {
+        btn = makeLink(CARD_BTN);
+        btn.textContent = 'AJ';
+        cover.appendChild(btn);
+      }
+      setLink(btn, id, link.textContent.trim());
+    }
+  }
+
   // Страница тайтла /anime/<id>/…: под «Add to List» и сердечком
   // (.header .cover-wrap-inner .actions — грид 165px 35px) отдельной строкой.
   function syncPage() {
@@ -146,6 +196,7 @@
 
   function sync() {
     syncList();
+    syncCards();
     syncPage();
   }
 
