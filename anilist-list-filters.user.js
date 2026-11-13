@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniList List Filters
 // @namespace    local
-// @version      1.0
+// @version      1.1
 // @description  Список аниме/манги AniList: фильтры не колонкой слева, а панелью сверху (вкладки списков, выпадашки в строку), список — на всю ширину.
 // @match        *://anilist.co/*
 // @run-at       document-start
@@ -91,7 +91,10 @@
         font-size: 1.3rem;
         text-transform: capitalize; /* «all» */
       }
-      ${P} .filter-group:first-child > span:hover { color: rgb(var(--color-text)); }
+      ${P} .filter-group:first-child > span:hover {
+        color: rgb(var(--color-text));
+        background: rgba(var(--color-background), 0.7);
+      }
       ${P} .filter-group:first-child > span.active {
         background: rgb(var(--color-blue)); /* акцент профиля */
         color: rgb(var(--color-white));
@@ -107,6 +110,22 @@
       ${P} .filter-group .el-slider__runway { background: rgb(var(--color-background)); }
       ${P} .filter-group:nth-child(4) { margin-left: auto; }
       ${P} .filter-group:nth-child(4) .el-select { width: 160px; }
+
+      /* Поля (поиск, выпадашки) у сайта цвета --color-foreground — того же,
+         что фон панели, и сливались с ним. Подложка как у вкладок, без рамок;
+         при наведении/фокусе — чуть светлее и ярче текст. */
+      ${P} .el-input__inner {
+        background: rgb(var(--color-background));
+        border-radius: 8px;
+        transition: color 0.15s, background 0.15s;
+      }
+      ${P} .el-input:hover .el-input__inner,
+      ${P} .el-input__inner:focus {
+        color: rgb(var(--color-text));
+        background: rgba(var(--color-background), 0.7);
+      }
+      ${P} > .filter-mobile-wrap .el-input__inner { height: 34px; line-height: 34px; }
+      ${P} > .filter-mobile-wrap .el-input__icon { line-height: 34px; }
     }
   `;
 
