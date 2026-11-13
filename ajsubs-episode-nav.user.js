@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.16
+// @version      1.17
 // @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. AllVideo запоминает громкость, изменённую ↑/↓. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // Плееры живут на своих доменах, а у Alloha домен случайный и меняется
 // (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
@@ -316,19 +316,47 @@
     track.removeCue(cue);
   }
 
+  // Ручные переносы (\N) переводчик ставит под ширину кадра ASS, а AllPlay
+  // рисует реплику с white-space: pre-wrap и сам ширину не ограничивает (только
+  // отступ 20 px по краям) — строка рвётся задолго до края, а 3–4 реплики
+  // разом превращаются в стопку обрубков (Ликорис Рикоил, 10-я серия: 103
+  // реплики диалога вида «Думаешь, найдёшь зацепку⏎среди диссертаций?»).
+  // Склеиваем строки пробелом — переносит сам плеер по ширине. Строку,
+  // которая начинается с тире, оставляем с новой строки: это реплики двух
+  // персонажей. Заодно схлопываем пробелы (\h, отступы «   «ЛикоРеко»»).
+  const CUE_DIALOG_DASH = /^(<[^>]+>)*[-–—]/;
+
+  function unwrapCueLines(text) {
+    let out = '';
+    for (const raw of text.split('\n')) {
+      const line = raw.replace(/[ \t\u00a0]+/g, ' ').trim();
+      if (!line) continue;
+      out += out ? (CUE_DIALOG_DASH.test(line) ? '\n' : ' ') + line : line;
+    }
+    return out;
+  }
+
   function cleanAssCues(track) {
     if (!track || !track.cues || !assCleanerEnabled()) return;
     const edits = editsOf(track);
     for (const cue of Array.from(track.cues)) {
       if (typeof cue.text !== 'string') continue;
-      if (ASS_DRAWING.test(cue.text)) {
+      const stripped = cue.text.replace(/\{[^}]*\}/g, '');
+      // Маска бывает и с огрызком тега впереди — «{845}m 1519 277 l …»
+      // (Ликорис Рикоил, 10-я серия, 12:30, 1602 таких реплики), поэтому
+      // проверяем уже без тегов.
+      if (ASS_DRAWING.test(stripped)) {
         removeCueTracked(track, edits, cue);
         continue;
       }
-      const text = cue.text
-        .replace(/\{[^}]*\}/g, '')
-        .replace(/\\[Nn]/g, '\n')
-        .replace(/\\h/g, ' ');
+      const text = unwrapCueLines(stripped.replace(/\\[Nn]/g, '\n').replace(/\\h/g, ' '));
+      // От реплики из одних тегов остаётся "" — AllPlay склеивает активные
+      // реплики через \n, и пустая даёт лишнюю пустую строку в стопке
+      // (Ликорис Рикоил, 10-я серия, 07:45: 6 таких на серию).
+      if (!text.replace(/<[^>]*>/g, '').trim()) {
+        removeCueTracked(track, edits, cue);
+        continue;
+      }
       if (text !== cue.text) {
         if (!edits.texts.has(cue)) edits.texts.set(cue, cue.text);
         cue.text = text;
