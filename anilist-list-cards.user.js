@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniList List Cards
 // @namespace    local
-// @version      1.7
+// @version      1.8
 // @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки; обложка — ссылка на тайтл, как название; смайлики оценки — зелёный/жёлтый/красный; «+» серии прямо в счётчике, сохранение через 3 с без кликов.
 // @match        *://anilist.co/*
 // @run-at       document-start
@@ -68,7 +68,7 @@
       background: none !important; /* у сайта — полупрозрачный цвет обложки */
       border-radius: 0;
       padding: 8px 2px 0;
-      font-size: 14.5px; /* у сайта 13px — мелко (1.7) */
+      font-size: 15.5px; /* у сайта 13px — мелко (1.7–1.8) */
       line-height: 1.25;
       display: -webkit-box;
       -webkit-box-orient: vertical;
@@ -116,8 +116,8 @@
       gap: 7px;
       margin: 5px 0 0;
       padding: 3px 4px 3px 10px; /* крупнее сайта (12px) — удобнее попадать (1.7) */
-      border-radius: 14px;
-      font-size: 14px;
+      border-radius: 15px;
+      font-size: 15px;
       font-weight: 500;
       background: rgba(var(--color-blue), 0.08);
       cursor: pointer;
@@ -131,12 +131,12 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
       background: rgba(var(--color-blue), 0.2);
       color: rgb(var(--color-blue));
-      font-size: 16px;
+      font-size: 17px;
       font-weight: 700;
       line-height: 1;
       visibility: hidden;
@@ -152,7 +152,7 @@
     }
     html body .medialist.cards .entry-card > .progress.${CHIP}[data-tm-pending]::before {
       content: attr(data-tm-pending);
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 600;
       color: rgb(var(--color-text-bright)); /* --color-blue на профиле = акцент, как у прогресса */
     }
