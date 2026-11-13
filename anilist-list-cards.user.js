@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AniList List Cards
 // @namespace    local
-// @version      1.4
-// @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки; обложка — ссылка на тайтл, как название.
+// @version      1.5
+// @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки; обложка — ссылка на тайтл, как название; смайлики оценки — зелёный/жёлтый/красный.
 // @match        *://anilist.co/*
 // @run-at       document-start
 // @grant        none
@@ -85,6 +85,13 @@
       grid-area: 3 / 2;
       justify-self: end;
     }
+    /* Оценка смайликами (формат POINT_3): у сайта все три — оранжевые, как
+       прогресс. Красим по data-icon из Font Awesome цветами палитры сайта
+       (те же --color-green/--color-red, что у бейджа anilist-cover-score,
+       и тема их подхватывает). Без .cards — в виде строками тоже. */
+    html body .medialist .score > svg[data-icon="smile"] { color: rgb(var(--color-green)); }
+    html body .medialist .score > svg[data-icon="meh"] { color: rgb(var(--color-yellow)); }
+    html body .medialist .score > svg[data-icon="frown"] { color: rgb(var(--color-red)); }
   `;
 
   const style = document.createElement('style');
