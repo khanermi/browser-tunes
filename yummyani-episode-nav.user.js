@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YummyAnime Episode Nav
 // @namespace    local
-// @version      1.13
+// @version      1.14
 // @description  Ctrl+Left/Right — переключение серии на old.yummyani.me. F9 — псевдо-fullscreen плеера (Esc — выход), кнопка PiP плеера Alloha включает его же. У Alloha вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // @match        *://old.yummyani.me/*
 // @match        *://ru.yummyani.me/*
@@ -396,8 +396,9 @@
       const stripped = cue.text.replace(/\{[^}]*\}/g, '');
       // Маска бывает и с огрызком тега впереди — «{845}m 1519 277 l …»
       // (Ликорис Рикоил, 10-я серия, 12:30, 1602 таких реплики), поэтому
-      // проверяем уже без тегов.
-      if (ASS_DRAWING.test(stripped)) {
+      // проверяем уже без тегов. И в HTML-теге — «<b>m -71 -24 l …</b>»
+      // (12-я серия, 11:42, надпись на экране планшета) — их тоже снимаем.
+      if (ASS_DRAWING.test(stripped.replace(/<[^>]*>/g, ''))) {
         removeCueTracked(track, edits, cue);
         continue;
       }

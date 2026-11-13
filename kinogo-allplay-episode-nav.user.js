@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         KinoGo AllPlay Episode Nav
 // @namespace    local
-// @version      1.9
+// @version      1.10
 // @description  Ctrl+Left/Right — next/previous episode в Плеере 3 (AllPlay) и во вкладке "Смотреть онлайн" (Playerjs, cinemar.cc) на kinogo.ec. F9 — псевдо-fullscreen плеера (Esc — выход). У AllPlay вычищает из субтитров остатки ASS (маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров AllPlay. Работает и когда фокус внутри iframe плеера (postMessage-мост).
 // @match        *://kinogo.ec/*
 // @match        *://*.stravers.live/*
@@ -213,8 +213,9 @@
       const stripped = cue.text.replace(/\{[^}]*\}/g, '');
       // Маска бывает и с огрызком тега впереди — «{845}m 1519 277 l …»
       // (Ликорис Рикоил, 10-я серия, 12:30, 1602 таких реплики), поэтому
-      // проверяем уже без тегов.
-      if (ASS_DRAWING.test(stripped)) {
+      // проверяем уже без тегов. И в HTML-теге — «<b>m -71 -24 l …</b>»
+      // (12-я серия, 11:42, надпись на экране планшета) — их тоже снимаем.
+      if (ASS_DRAWING.test(stripped.replace(/<[^>]*>/g, ''))) {
         removeCueTracked(track, edits, cue);
         continue;
       }

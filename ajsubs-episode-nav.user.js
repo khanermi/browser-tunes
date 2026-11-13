@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.17
+// @version      1.18
 // @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. AllVideo запоминает громкость, изменённую ↑/↓. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // Плееры живут на своих доменах, а у Alloha домен случайный и меняется
 // (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
@@ -344,8 +344,9 @@
       const stripped = cue.text.replace(/\{[^}]*\}/g, '');
       // Маска бывает и с огрызком тега впереди — «{845}m 1519 277 l …»
       // (Ликорис Рикоил, 10-я серия, 12:30, 1602 таких реплики), поэтому
-      // проверяем уже без тегов.
-      if (ASS_DRAWING.test(stripped)) {
+      // проверяем уже без тегов. И в HTML-теге — «<b>m -71 -24 l …</b>»
+      // (12-я серия, 11:42, надпись на экране планшета) — их тоже снимаем.
+      if (ASS_DRAWING.test(stripped.replace(/<[^>]*>/g, ''))) {
         removeCueTracked(track, edits, cue);
         continue;
       }
