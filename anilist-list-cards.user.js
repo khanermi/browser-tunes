@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniList List Cards
 // @namespace    local
-// @version      1.1
+// @version      1.2
 // @description  Список аниме/манги AniList, вид карточками: обложка чистая, название, прогресс и оценка — под ней, а не плашкой поверх картинки.
 // @match        *://anilist.co/*
 // @run-at       document-start
@@ -21,9 +21,13 @@
   // строки грида тоже надо отпустить, иначе подписи налезают на следующий ряд.
   // .release-status (точка «выходит»), .repeat, .notes остаются absolute
   // от top — к новой высоте карточки не привязаны.
+  // Колонки — minmax(150px, 1fr) вместо фиксированных 150px: сетка тянется на
+  // всю ширину (особенно с anilist-list-filters, где колонки фильтров нет), а
+  // обложка держит пропорцию 150:210 через aspect-ratio (.image — height 100%).
   // Только CSS: правила ждут .medialist.cards, переходы внутри SPA не важны.
   const css = `
     html body .medialist.cards .list-section .list-entries {
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
       grid-template-rows: none;
       grid-auto-rows: auto;
     }
@@ -31,13 +35,15 @@
       height: auto;
       display: grid;
       grid-template-columns: 1fr auto;
-      grid-template-rows: 210px auto auto;
+      grid-template-rows: auto auto auto;
       align-items: center;
       box-shadow: none;
     }
     html body .medialist.cards .entry-card > .cover {
       position: relative;
       grid-area: 1 / 1 / 2 / 3;
+      height: auto;
+      aspect-ratio: 150 / 210;
       box-shadow: rgba(49, 54, 68, 0.2) 0 2px 20px;
     }
     html body .medialist.cards .entry-card > .title {
