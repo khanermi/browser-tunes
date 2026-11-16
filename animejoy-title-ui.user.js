@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy Title UI
 // @namespace    local
-// @version      1.7
+// @version      1.8
 // @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При первом заходе на тайтл включается первый плеер панели (AllVideo/Alloha), дальше — последний выбранный. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск и 3 последних открытых тайтла с серией (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
 // @match        *://otakujoy.fun/*
 // @match        *://animejoy.ru/*
@@ -432,6 +432,8 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
   // «Сезон:» («осень-2025»). Всего найдено — .search_result_num «найдено 12
   // ответов». Ничего не нашлось — просто ни одной статьи, без сообщения.
   const SEARCH_PAGE_SIZE = 10;
+  // Сколько страниц сразу читать при поиске с AniList (ищем карточки того же года)
+  const SEARCH_YEAR_PAGES = 5;
   // year — год тайтла с AniList: такие карточки подсвечиваются
   const search = { query: '', page: 0, total: 0, shown: 0, controller: null, year: '', note: '' };
   let searchUi = null;
@@ -581,7 +583,7 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     } catch (e) {
       /* битая ссылка */
     }
-    const match = !!search.year && item.year === search.year;
+    const match = isYearMatch(item);
     return el(
       'a',
       { class: 'ojx-card' + (current ? ' is-current' : '') + (match ? ' is-match' : ''), href: item.href, title: item.title },
@@ -589,6 +591,36 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
       el('div', { class: 'ojx-card-t', text: item.title }),
       item.meta && el('div', { class: 'ojx-card-m', text: item.meta })
     );
+  }
+
+  function isYearMatch(item) {
+    return !!search.year && item.year === search.year;
+  }
+
+  // Совпадения по году AniList (в рамочке) — всегда в начале списка, в том
+  // числе пришедшие по «Показать ещё»: встают за последним уже показанным.
+  function appendCards(items) {
+    const grid = searchUi.grid;
+    const firstOther = grid.querySelector('.ojx-card:not(.is-match)');
+    for (const item of items) {
+      const card = resultCard(item);
+      if (isYearMatch(item) && firstOther) grid.insertBefore(card, firstOther);
+      else grid.append(card);
+    }
+  }
+
+  async function fetchSearchPage(query, page, signal) {
+    const body = new URLSearchParams({
+      do: 'search',
+      subaction: 'search',
+      search_start: String(page),
+      full_search: '0',
+      result_from: String((page - 1) * SEARCH_PAGE_SIZE + 1),
+      story: query,
+    });
+    const res = await fetch('/index.php?do=search', { method: 'POST', body, credentials: 'same-origin', signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return parseResults(await res.text());
   }
 
   // Возвращает число найденных на странице (null — запрос отменён/упал).
@@ -610,22 +642,22 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
     openResults();
 
     try {
-      const body = new URLSearchParams({
-        do: 'search',
-        subaction: 'search',
-        search_start: String(page),
-        full_search: '0',
-        result_from: String((page - 1) * SEARCH_PAGE_SIZE + 1),
-        story: query,
-      });
-      const res = await fetch('/index.php?do=search', { method: 'POST', body, credentials: 'same-origin', signal: controller.signal });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const { total, items } = parseResults(await res.text());
+      let { total, items } = await fetchSearchPage(query, page, controller.signal);
+      // Поиск с AniList: совпадения по году могут быть на дальних страницах —
+      // дочитываем ещё несколько, чтобы поднять их наверх.
+      if (search.year && page === 1) {
+        while (page < SEARCH_YEAR_PAGES && items.length < total && controller === search.controller) {
+          const next = await fetchSearchPage(query, page + 1, controller.signal);
+          if (!next.items.length) break;
+          page += 1;
+          items = items.concat(next.items);
+        }
+      }
       if (controller !== search.controller) return null;
       search.page = page;
       search.total = Math.max(total, search.shown + items.length);
       search.shown += items.length;
-      ui.grid.append(...items.map(resultCard));
+      appendCards(items);
       ui.title.textContent = '«' + query + '» · ' + search.total + (search.note ? ' · ' + search.note : '');
       ui.status.textContent = search.shown ? (search.shown < search.total ? 'Показано ' + search.shown + ' из ' + search.total : '') : 'Ничего не найдено';
       ui.more.hidden = !(items.length && search.shown < search.total);
