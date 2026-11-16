@@ -296,6 +296,14 @@
   `installAllVideoVolumeSaver` по `volumechange`. Гейт тот же (домен AllVideo +
   referrer сайта). Проверено только `node --check`, на живом плеере — нет.
 
+- **Псевдо-fullscreen и `scrollbar-gutter` (1.20).** `animejoy-title-ui`
+  держит `html.ojx { scrollbar-gutter: stable }`; с `overflow: hidden` резерв
+  под полосу прокрутки остаётся, и fixed-контейнер `100vw` получался уже
+  viewport на ширину полосы — справа поверх плеера вертикальная полоса.
+  На время режима инлайн `scrollbar-gutter: auto` на `<html>`, на выходе
+  сброс. Проверено на живой странице otakujoy: ширина контейнера 1615 → 1630
+  при `innerWidth` 1630.
+
 - **Список серий — обычный DOM без хэшей**: плейлист грузится аяксом
   (`/engine/ajax/playlists.php`, логика в `templates/AnimeJoy/playlists/player.js`),
   и в `.playlists-videos` лежат серии **всех** озвучек и плееров сразу. Серии

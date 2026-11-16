@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy (ajsubs) Episode Nav
 // @namespace    local
-// @version      1.19
+// @version      1.20
 // @description  Ctrl+Left/Right — переключение серии на ajsubs.ru, animejoy.ru и его зеркале otakujoy.fun (AnimeJoy), у плеера Alloha — его же кнопками ‹ ›. F9 — псевдо-fullscreen плеера (Esc — выход), кнопки полного экрана Mail и PiP Alloha включают его же. У Alloha вычищает из субтитров остатки ASS (векторные маски "m 20 73 l ...", теги {…}, дубли-слои; кнопка-метла в панели плеера вкл/выкл), Shift+↑/↓ — размер субтитров Alloha. AllVideo: ↑/↓ меняют громкость шагом 10% и запоминают её. Работает и когда фокус внутри iframe плеера (postMessage-мост), после переключения фокус ставится на <video> внутри плеера.
 // Плееры живут на своих доменах, а у Alloha домен случайный и меняется
 // (politician-as.stravers.live на 2026-11), поэтому скрипт запускается везде,
@@ -931,7 +931,11 @@
       margin: '0',
       zIndex: '2147483647',
     });
+    // animejoy-title-ui держит html { scrollbar-gutter: stable } — с overflow:
+    // hidden место под полосу прокрутки остаётся пустой полосой справа поверх
+    // плеера. Инлайн-стиль перебивает его на время режима.
     document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.scrollbarGutter = 'auto';
     fsContainer = container;
     focusPlayer();
   }
@@ -941,6 +945,7 @@
     if (savedStyle === null) fsContainer.removeAttribute('style');
     else fsContainer.setAttribute('style', savedStyle);
     document.documentElement.style.overflow = '';
+    document.documentElement.style.scrollbarGutter = '';
     fsContainer = null;
   }
 
