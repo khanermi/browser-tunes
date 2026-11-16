@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AnimeJoy Title UI
 // @namespace    local
-// @version      1.8
+// @version      1.9
 // @description  Страница тайтла otakujoy.fun / animejoy.ru в своём тёмном интерфейсе: только названия (с исправленной подмешанной латиницей, копируются кликом), постер, части франшизы без спойлера, плеер 16:9 и сетка серий рядом с ним вместо горизонтальной ленты-слайдера. При первом заходе на тайтл включается первый плеер панели (AllVideo/Alloha), дальше — последний выбранный. При смене плеера остаётся та же серия. Поиск по сайту в верхней панели (/ — фокус): постеры, название, год, серии. Главная otakujoy.fun/ — только поиск и 3 последних открытых тайтла с серией (лента сайта — /index.php); #q=… и #al=<id AniList> — поиск по ссылке. «Обычный вид» возвращает страницу сайта. Совместим с ajsubs-episode-nav (Ctrl+←/→, F9).
 // @match        *://otakujoy.fun/*
 // @match        *://animejoy.ru/*
@@ -602,11 +602,11 @@ html.ojx-has-results #ojx .ojx-logo { font-size: 40px; }
   function appendCards(items) {
     const grid = searchUi.grid;
     const firstOther = grid.querySelector('.ojx-card:not(.is-match)');
-    for (const item of items) {
-      const card = resultCard(item);
-      if (isYearMatch(item) && firstOther) grid.insertBefore(card, firstOther);
-      else grid.append(card);
-    }
+    const matches = items.filter(isYearMatch).map(resultCard);
+    const others = items.filter((item) => !isYearMatch(item)).map(resultCard);
+    if (firstOther) firstOther.before(...matches);
+    else grid.append(...matches);
+    grid.append(...others);
   }
 
   async function fetchSearchPage(query, page, signal) {
